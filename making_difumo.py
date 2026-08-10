@@ -81,9 +81,9 @@ N_roi = 64           # Number of ROIs for the Difumo atlas (options: 64, 128, 25
 resolution_mm = 2    # Spatial resolution of the Difumo atlas
 
 # Paths
-data_path = './data/fMRI/'
-motion_pathroot = './data/motions/'
-save_pathroot = './data/fMRI_difumo/'
+data_path = './data/fMRI/ '
+motion_pathroot = './data/motions/ '
+save_pathroot = './data/fMRI_difumo/ '
 endname = '*.nii'
 scanname_length = 13  # Number of characters to pick from file name for the scan name
 paths = glob.glob(os.path.join(data_path, endname))

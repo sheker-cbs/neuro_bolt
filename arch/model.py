@@ -22,10 +22,10 @@ import torch.nn.functional as F
 from timm.models.layers import drop_path, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
 from einops import rearrange
-from models.model_multiscale import MSSEncoder
-from models.new_layers import BandAttention, ChannelAttention #importing new attention layeres
+from arch.model_multiscale import MSSEncoder
 
-def _cfg(url='', **kwargs):#not sure if this is being used anywhere in the code
+
+def _cfg(url='', **kwargs):
     return {
         'url': url,
         'num_classes': 1000, 'input_size': (3, 224, 224), 'pool_size': None,  # todo,change this
@@ -35,7 +35,7 @@ def _cfg(url='', **kwargs):#not sure if this is being used anywhere in the code
     }
 
 
-class DropPath(nn.Module): #drops blocks as regularization
+class DropPath(nn.Module):
     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
     """
 
@@ -50,7 +50,7 @@ class DropPath(nn.Module): #drops blocks as regularization
         return 'p={}'.format(self.drop_prob)
 
 
-class Mlp(nn.Module):#feed forward block (standard in transformers ); linear-->gelu-->linear
+class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
         out_features = out_features or in_features
@@ -70,7 +70,7 @@ class Mlp(nn.Module):#feed forward block (standard in transformers ); linear-->g
         return x
 
 
-class Attention(nn.Module):#multi-head self attention
+class Attention(nn.Module):
     def __init__(
             self, dim, num_heads=8, qkv_bias=False, qk_norm=None, qk_scale=None, attn_drop=0.,
             proj_drop=0., window_size=None, attn_head_dim=None):
@@ -97,7 +97,7 @@ class Attention(nn.Module):#multi-head self attention
             self.q_norm = None
             self.k_norm = None
 
-        if window_size: #relative position bias (usually used in vision transformer machinery) #not actually used in here 
+        if window_size:
             self.window_size = window_size
             self.num_relative_distance = (2 * window_size[0] - 1) * (2 * window_size[1] - 1) + 3
             self.relative_position_bias_table = nn.Parameter(
@@ -131,7 +131,7 @@ class Attention(nn.Module):#multi-head self attention
         self.proj = nn.Linear(all_head_dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x, rel_pos_bias=None, return_attention=False, return_qkv=False): #combined q,k,v projection (computes queries, keys, adn values in one matrix multiply, then splits them instead of having three linear layers)
+    def forward(self, x, rel_pos_bias=None, return_attention=False, return_qkv=False):
         B, N, C = x.shape
         qkv_bias = None
         if self.q_bias is not None:
@@ -162,7 +162,7 @@ class Attention(nn.Module):#multi-head self attention
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
-        if return_attention: 
+        if return_attention:
             return attn
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
@@ -176,7 +176,7 @@ class Attention(nn.Module):#multi-head self attention
         return x
 
 
-class Block(nn.Module):#transofrmer encoder layer
+class Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_norm=None, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, act_layer=nn.GELU, norm_layer=nn.LayerNorm,
                  window_size=None, attn_head_dim=None):
@@ -215,7 +215,7 @@ class Block(nn.Module):#transofrmer encoder layer
         return x
 
 
-class PatchEmbed(nn.Module):# Conv2d-based patch embedding for the "neural decoder" mode; looks like is not used in the project
+class PatchEmbed(nn.Module):
     """ EEG to Patch Embedding
     """
 
@@ -230,7 +230,7 @@ class PatchEmbed(nn.Module):# Conv2d-based patch embedding for the "neural decod
         return x
 
 
-class TemporalConv(nn.Module): #transforms raw eeg into patches
+class TemporalConv(nn.Module):
     """ EEG to Patch Embedding
     """
 
@@ -261,7 +261,7 @@ class TemporalConv(nn.Module): #transforms raw eeg into patches
         return x
 
 
-class NeuroBOLTransformer(nn.Module): #assembles two branches (spatiotemporal and spectral)
+class NeuroBOLTransformer(nn.Module):
     def __init__(self, EEG_length=3200, EEG_channel=26, patch_size=200, in_chans=1, out_chans=8, num_roi=1, embed_dim=200, win_level=3,
                  depth=12,
                  num_heads=10, mlp_ratio=4., qkv_bias=False, qk_norm=None, qk_scale=None, drop_rate=0.,
@@ -311,7 +311,6 @@ class NeuroBOLTransformer(nn.Module): #assembles two branches (spatiotemporal an
 
         self.mss_module = MSSEncoder(num_roi=num_roi, emb_size=embed_dim, n_channels=EEG_channel, num_heads=8, scale1=100,
                                      input_length=EEG_length, win_level=win_level)
-        self.head_act = nn.GELU()
 
         if self.pos_embed is not None:
             trunc_normal_(self.pos_embed, std=.02)
@@ -403,7 +402,7 @@ class NeuroBOLTransformer(nn.Module): #assembles two branches (spatiotemporal an
         x_tmp = self.forward_ts_features(x, input_chans=input_chans, return_patch_tokens=return_patch_tokens,
                                          return_all_tokens=return_all_tokens, **kwargs)
         x_mss = self.mss_module(rearrange(x, 'B N A T -> B N (A T)'), input_chans=input_chans_spect)
-        x = self.head(self.head_act(x_mss + x_tmp)) # here adding activation function is optional, you can also directly add x_mss and x_tmp
+        x = self.head(x_mss + x_tmp)
         return x
 
 

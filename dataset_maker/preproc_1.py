@@ -1,14 +1,3 @@
-"""
-dataset_maker.preproc
-
-Preprocessing helpers used when building EEG/fMRI datasets:
-  - `normalize_data`: per-epoch EEG normalization (absmax scaling or
-    z-scoring with optionally reusable statistics).
-  - `epoching_seq2one`: turns continuous, event-annotated EEG plus an fMRI
-    ROI time series into paired (EEG epoch -> single fMRI time point)
-    samples, the "seq2one" format NeuroBOLT trains on.
-"""
-
 import mne
 import numpy as np
 import pandas as pd
@@ -18,25 +7,6 @@ def normalize_data(data, means_stds=None, mode='absmax'):
     data - normalize by second.
     means_std - (means, stds )
 
-    Two modes:
-      - 'absmax' (default): mean-center each row, then scale by its 95th
-        percentile absolute value (a robust max-like scale). `means_stds` is
-        accepted for a consistent function signature but is NOT used to
-        compute the transform in this mode — it is simply passed through
-        unchanged in the return value (so if it was None coming in, it will
-        still be None going out).
-      - any other value: z-score using `means_stds` if provided, otherwise
-        compute (means, stds) from `data` itself and z-score with those.
-
-    Args:
-        data: Array to normalize, normalized along the last axis.
-        means_stds: Optional (means, stds) tuple to reuse (e.g. train-set
-            statistics applied to val/test data). Only used when
-            `mode != 'absmax'`.
-        mode: 'absmax' or any other string to select z-scoring.
-
-    Returns:
-        Tuple of (transform_data, means_stds).
     """
     # if mode == 'absmax':
     #     transform_data = data/(
@@ -94,17 +64,11 @@ def epoching_seq2one(eegraw, fmridataset,
          - `"fmri"`: List of numpy arrays, where each array represents a single time point of fMRI data with shape (#roi).
        - `eeg_epoch`: MNE `Epochs` object containing the processed EEG epochs.
          (Useful for retrieving additional information such as channel names, times, and sampling rates.)
-
-    Note: despite the `ifnorm` parameter being documented above, the function
-    body below does not currently call `normalize_data` / apply any
-    normalization — it is accepted but unused as written.
     """
 
     # if original_fps != new_fps:
     #     eegraw.resample(new_fps)
 
-    # Find the time-locking event ('event_name') among all annotated events,
-    # then keep only events with that specific event_id.
     events, event_id = mne.events_from_annotations(eegraw)
     sync_eventname = event_name  # TODO make it more generalizable
     event_id = {sync_eventname: event_id[sync_eventname]}
@@ -128,17 +92,12 @@ def epoching_seq2one(eegraw, fmridataset,
     #     eeg=400e-6,  # 150 µV
     # )
 
-    # Build one EEG epoch per retained event, spanning [tmin, tmax] seconds
-    # around it; no baseline correction, optional peak-to-peak rejection.
     eeg_epoch = mne.Epochs(eegraw, events, event_id=event_id, tmin=tmin, tmax=tmax, preload=True,
                            baseline=(None, None), reject=reject_criteria)
 
     eeg_epoch_data = eeg_epoch.get_data(units='uV')
 
     # get the indices for selected events for epoching
-    # (MNE may drop some epochs, e.g. due to reject_criteria or edge
-    # effects, so `.selection` gives the surviving event indices — used to
-    # pick out the matching fMRI time points below.)
     select_ind = eeg_epoch.selection
     fmri_epoch = fmridataset[:, select_ind]
 

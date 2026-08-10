@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 821, in <module>
+    main(args, ds_init)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 411, in main
+    batch_size=args.batch_size,
+AttributeError: 'Namespace' object has no attribute 'batch_size'

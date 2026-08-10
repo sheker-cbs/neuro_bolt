@@ -1,0 +1,335 @@
+                       using device: cuda
+Algermissen subjects to train: ['sub-001', 'sub-002', 'sub-003', 'sub-005', 'sub-006', 'sub-007', 'sub-008', 'sub-009', 'sub-010', 'sub-011', 'sub-012', 'sub-013', 'sub-014', 'sub-016', 'sub-017', 'sub-018', 'sub-019', 'sub-020', 'sub-021', 'sub-022', 'sub-023', 'sub-024', 'sub-026', 'sub-027', 'sub-028', 'sub-029', 'sub-030', 'sub-031', 'sub-032', 'sub-033', 'sub-034', 'sub-035']
+
+============================================================
+Starting NeuroBOLT training for sub-001
+============================================================
+
+Not using distributed mode
+  sub-001: built 2584 EEG->VS epochs (EEG 63ch x 3200 samp @ 200Hz)
+  split sizes — train 2067, val 246, test 247
+
+Dataset shapes:
+Train dataset - EEG: torch.Size([2067, 63, 3200]), fMRI: torch.Size([2067])
+Test dataset  - EEG: torch.Size([247, 63, 3200]), fMRI: torch.Size([247])
+Val dataset   - EEG: torch.Size([246, 63, 3200]), fMRI: torch.Size([246])
+Sampler_train = <torch.utils.data.distributed.DistributedSampler object at 0x7f351f2f6040>
+Patch size = 200
+Load ckpt from /data/p_03183/personal_workspaces/sheker/NeuroBOLT/checkpoints/labram-base.pth
+Load state_dict by model_key = model
+Weights of NeuroBOLTransformer not initialized from pretrained model: ['fc_norm.weight', 'fc_norm.bias', 'head.weight', 'head.bias', 'mss_module.index', 'mss_module.patch_embedding.0.projection.weight', 'mss_module.patch_embedding.0.projection.bias', 'mss_module.patch_embedding.1.projection.weight', 'mss_module.patch_embedding.1.projection.bias', 'mss_module.patch_embedding.2.projection.weight', 'mss_module.patch_embedding.2.projection.bias', 'mss_module.patch_embedding.3.projection.weight', 'mss_module.patch_embedding.3.projection.bias', 'mss_module.ts_embedding.0.projection.weight', 'mss_module.ts_embedding.0.projection.bias', 'mss_module.ts_embedding.1.projection.weight', 'mss_module.ts_embedding.1.projection.bias', 'mss_module.ts_embedding.2.projection.weight', 'mss_module.ts_embedding.2.projection.bias', 'mss_module.ts_embedding.3.projection.weight', 'mss_module.ts_embedding.3.projection.bias', 'mss_module.transformer.layers.layers.0.0.fn.to_q.weight', 'mss_module.transformer.layers.layers.0.0.fn.to_k.weight', 'mss_module.transformer.layers.layers.0.0.fn.to_v.weight', 'mss_module.transformer.layers.layers.0.0.fn.to_out.weight', 'mss_module.transformer.layers.layers.0.0.fn.to_out.bias', 'mss_module.transformer.layers.layers.0.0.norm.weight', 'mss_module.transformer.layers.layers.0.0.norm.bias', 'mss_module.transformer.layers.layers.0.1.fn.fn.w1.weight', 'mss_module.transformer.layers.layers.0.1.fn.fn.w1.bias', 'mss_module.transformer.layers.layers.0.1.fn.fn.w2.weight', 'mss_module.transformer.layers.layers.0.1.fn.fn.w2.bias', 'mss_module.transformer.layers.layers.0.1.norm.weight', 'mss_module.transformer.layers.layers.0.1.norm.bias', 'mss_module.transformer.layers.layers.1.0.fn.to_q.weight', 'mss_module.transformer.layers.layers.1.0.fn.to_k.weight', 'mss_module.transformer.layers.layers.1.0.fn.to_v.weight', 'mss_module.transformer.layers.layers.1.0.fn.to_out.weight', 'mss_module.transformer.layers.layers.1.0.fn.to_out.bias', 'mss_module.transformer.layers.layers.1.0.norm.weight', 'mss_module.transformer.layers.layers.1.0.norm.bias', 'mss_module.transformer.layers.layers.1.1.fn.fn.w1.weight', 'mss_module.transformer.layers.layers.1.1.fn.fn.w1.bias', 'mss_module.transformer.layers.layers.1.1.fn.fn.w2.weight', 'mss_module.transformer.layers.layers.1.1.fn.fn.w2.bias', 'mss_module.transformer.layers.layers.1.1.norm.weight', 'mss_module.transformer.layers.layers.1.1.norm.bias', 'mss_module.transformer.layers.layers.2.0.fn.to_q.weight', 'mss_module.transformer.layers.layers.2.0.fn.to_k.weight', 'mss_module.transformer.layers.layers.2.0.fn.to_v.weight', 'mss_module.transformer.layers.layers.2.0.fn.to_out.weight', 'mss_module.transformer.layers.layers.2.0.fn.to_out.bias', 'mss_module.transformer.layers.layers.2.0.norm.weight', 'mss_module.transformer.layers.layers.2.0.norm.bias', 'mss_module.transformer.layers.layers.2.1.fn.fn.w1.weight', 'mss_module.transformer.layers.layers.2.1.fn.fn.w1.bias', 'mss_module.transformer.layers.layers.2.1.fn.fn.w2.weight', 'mss_module.transformer.layers.layers.2.1.fn.fn.w2.bias', 'mss_module.transformer.layers.layers.2.1.norm.weight', 'mss_module.transformer.layers.layers.2.1.norm.bias', 'mss_module.transformer.layers.layers.3.0.fn.to_q.weight', 'mss_module.transformer.layers.layers.3.0.fn.to_k.weight', 'mss_module.transformer.layers.layers.3.0.fn.to_v.weight', 'mss_module.transformer.layers.layers.3.0.fn.to_out.weight', 'mss_module.transformer.layers.layers.3.0.fn.to_out.bias', 'mss_module.transformer.layers.layers.3.0.norm.weight', 'mss_module.transformer.layers.layers.3.0.norm.bias', 'mss_module.transformer.layers.layers.3.1.fn.fn.w1.weight', 'mss_module.transformer.layers.layers.3.1.fn.fn.w1.bias', 'mss_module.transformer.layers.layers.3.1.fn.fn.w2.weight', 'mss_module.transformer.layers.layers.3.1.fn.fn.w2.bias', 'mss_module.transformer.layers.layers.3.1.norm.weight', 'mss_module.transformer.layers.layers.3.1.norm.bias', 'mss_module.positional_encoding.pe', 'mss_module.channel_tokens.weight']
+Weights from pretrained model not used in NeuroBOLTransformer: ['mask_token', 'lm_head.weight', 'lm_head.bias', 'norm.weight', 'norm.bias']
+Model = NeuroBOLTransformer(
+  (patch_embed): TemporalConv(
+    (conv1): Conv2d(1, 8, kernel_size=(1, 15), stride=(1, 8), padding=(0, 7))
+    (gelu1): GELU(approximate='none')
+    (norm1): GroupNorm(4, 8, eps=1e-05, affine=True)
+    (conv2): Conv2d(8, 8, kernel_size=(1, 3), stride=(1, 1), padding=(0, 1))
+    (gelu2): GELU(approximate='none')
+    (norm2): GroupNorm(4, 8, eps=1e-05, affine=True)
+    (conv3): Conv2d(8, 8, kernel_size=(1, 3), stride=(1, 1), padding=(0, 1))
+    (norm3): GroupNorm(4, 8, eps=1e-05, affine=True)
+    (gelu3): GELU(approximate='none')
+  )
+  (pos_drop): Dropout(p=0.3, inplace=False)
+  (blocks): ModuleList(
+    (0): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): Identity()
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (1): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.00909090880304575)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (2): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.0181818176060915)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (3): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.027272727340459824)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (4): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.036363635212183)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (5): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.045454543083906174)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (6): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.054545458406209946)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (7): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.06363636255264282)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (8): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.0727272778749466)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (9): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.08181818574666977)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (10): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.09090909361839294)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+    (11): Block(
+      (norm1): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (attn): Attention(
+        (qkv): Linear(in_features=200, out_features=600, bias=False)
+        (q_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (k_norm): LayerNorm((20,), eps=1e-06, elementwise_affine=True)
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj): Linear(in_features=200, out_features=200, bias=True)
+        (proj_drop): Dropout(p=0.3, inplace=False)
+      )
+      (drop_path): DropPath(p=0.10000000149011612)
+      (norm2): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+      (mlp): Mlp(
+        (fc1): Linear(in_features=200, out_features=800, bias=True)
+        (act): GELU(approximate='none')
+        (fc2): Linear(in_features=800, out_features=200, bias=True)
+        (drop): Dropout(p=0.3, inplace=False)
+      )
+    )
+  )
+  (norm): Identity()
+  (fc_norm): LayerNorm((200,), eps=1e-06, elementwise_affine=True)
+  (head): Linear(in_features=200, out_features=1, bias=True)
+  (mss_module): MSSEncoder(
+    (patch_embedding): ModuleList(
+      (0): PatchFrequencyEmbedding(
+        (projection): Linear(in_features=51, out_features=200, bias=True)
+      )
+      (1): PatchFrequencyEmbedding(
+        (projection): Linear(in_features=101, out_features=200, bias=True)
+      )
+      (2): PatchFrequencyEmbedding(
+        (projection): Linear(in_features=201, out_features=200, bias=True)
+      )
+      (3): PatchFrequencyEmbedding(
+        (projection): Linear(in_features=401, out_features=200, bias=True)
+      )
+    )
+    (ts_embedding): ModuleList(
+      (0): PatchWindowEmbedding(
+        (projection): Linear(in_features=32, out_features=32, bias=True)
+      )
+      (1): PatchWindowEmbedding(
+        (projection): Linear(in_features=16, out_features=32, bias=True)
+      )
+      (2): PatchWindowEmbedding(
+        (projection): Linear(in_features=8, out_features=32, bias=True)
+      )
+      (3): PatchWindowEmbedding(
+        (projection): Linear(in_features=4, out_features=32, bias=True)
+      )
+    )
+    (transformer): LinearAttentionTransformer(
+      (layers): SequentialSequence(
+        (layers): ModuleList(
+          (0-3): 4 x ModuleList(
+            (0): PreNorm(
+              (fn): SelfAttention(
+                (local_attn): LocalAttention(
+                  (dropout): Dropout(p=0.2, inplace=False)
+                )
+                (to_q): Linear(in_features=200, out_features=200, bias=False)
+                (to_k): Linear(in_features=200, out_features=200, bias=False)
+                (to_v): Linear(in_features=200, out_features=200, bias=False)
+                (to_out): Linear(in_features=200, out_features=200, bias=True)
+                (dropout): Dropout(p=0.2, inplace=False)
+              )
+              (norm): LayerNorm((200,), eps=1e-05, elementwise_affine=True)
+            )
+            (1): PreNorm(
+              (fn): Chunk(
+                (fn): FeedForward(
+                  (w1): Linear(in_features=200, out_features=800, bias=True)
+                  (act): GELU(approximate='none')
+                  (dropout): Dropout(p=0.0, inplace=False)
+                  (w2): Linear(in_features=800, out_features=200, bias=True)
+                )
+              )
+              (norm): LayerNorm((200,), eps=1e-05, elementwise_affine=True)
+            )
+          )
+        )
+      )
+    )
+    (positional_encoding): PositionalEncoding(
+      (dropout): Dropout(p=0.1, inplace=False)
+    )
+    (channel_tokens): Embedding(63, 200)
+  )
+)
+number of params: 7914385

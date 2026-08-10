@@ -90,20 +90,6 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, : x.size(1)]
         return self.dropout(x)
 
-# --- Inside MSSEncoder.__init__, add: ---
-#   self.band_attn = BandAttention(emb_size=200)
-#   self.channel_attn = ChannelAttention(emb_size=200)
-#
-# --- Inside MSSEncoder.forward, replace the two lines: ---
-#   channel_spec_emb = torch.sum(torch.stack(channel_spec_emb_list), dim=0)
-#   -->
-#   channel_spec_emb, band_weights = self.band_attn(channel_spec_emb_list)
-#   self.last_band_weights[i] = band_weights   # collect per channel i, e.g. into a list
-#
-#   emb = self.transformer(emb).mean(dim=1)
-#   -->
-#   emb, channel_weights = self.channel_attn(self.transformer(emb), n_channels=x.shape[1], ts_per_channel=32)
-#   self.last_channel_weights = channel_weights
 
 class MSSEncoder(nn.Module):
     def __init__(
@@ -151,8 +137,6 @@ class MSSEncoder(nn.Module):
         self.index = nn.Parameter(
             torch.LongTensor(range(n_channels)), requires_grad=False
         )
-        self.band_attn = BandAttention(emb_size=200) #band attention
-        self.channel_attn = ChannelAttention(emb_size=200) # channel attention
 
     def stft(self, sample, n_fft):
         spectral = torch.stft(
@@ -178,9 +162,7 @@ class MSSEncoder(nn.Module):
                 channel_spec_emb_list.append(self.ts_embedding[n](
                     self.patch_embedding[n](
                         self.stft(x[:, i: i + 1, :], n_fft=self.scale1 * (2 ** n)))))
-            # channel_spec_emb = torch.sum(torch.stack(channel_spec_emb_list), dim=0)
-            channel_spec_emb, band_weights = self.band_attn(channel_spec_emb_list)
-            self.last_band_weights[i] = band_weights   # collect per channel i, e.g. into a list
+            channel_spec_emb = torch.sum(torch.stack(channel_spec_emb_list), dim=0)
             batch_size, ts, _ = channel_spec_emb.shape
             # (batch_size, ts, emb)
             if input_chans is None:
@@ -211,9 +193,7 @@ class MSSEncoder(nn.Module):
         # (batch_size, ch * ts, emb)
         emb = torch.cat(emb_seq, dim=1)
         # (batch_size, emb)
-        # emb = self.transformer(emb).mean(dim=1)
-        emb, channel_weights = self.channel_attn(self.transformer(emb), n_channels=x.shape[1], ts_per_channel=32) #newly added
-        self.last_channel_weights = channel_weights #newly added 
+        emb = self.transformer(emb).mean(dim=1)
         return emb
 
 

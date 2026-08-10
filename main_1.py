@@ -11,20 +11,11 @@ we extend our gratitude to the authors for their contributions:
 - https://github.com/rwightman/pytorch-image-models/tree/master/timm
 - https://github.com/facebookresearch/deit/
 - https://github.com/facebookresearch/dino
-
-Script purpose
---------------
-This script trains one NeuroBOLT
-model per subject on the "Algermissen" EEG/fMRI dataset, using intra-subject
-("intrascan") training. Configuration is done by directly setting attributes
-on an `argparse.Namespace` object (rather than parsing CLI flags), so the
-script is meant to be run as-is or edited in place for a given experiment.
 """
 
 import argparse
 import datetime
-from pyexpat import model  # NOTE: unused import (name collides with local var `model` below);
-                            # left as-is since we're only annotating, not modifying behavior.
+from pyexpat import model
 import numpy as np
 import time
 import torch
@@ -41,24 +32,17 @@ from timm.models import create_model
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.utils import ModelEma
 import matplotlib.pyplot as plt
-# import wandb
+import wandb
 
 
-# ---------------------------------------------------------------------------
-# Path resolution
-# ---------------------------------------------------------------------------
-# Older Windows/Colab path hints, kept for reference but disabled.
 #if platform.system() == 'Windows':
 #    code_path = 'c:/Users/herzo/Documents/work/DLEEGfMRI/NeuroBOLT/code'
 #else:
     # Assuming the code is in /content/NeuroBOLT/code in Colab
 #    code_path = '/content/NeuroBOLT/code'
-
+    
 # engine.py / runtime.py / optim_factory.py / arch/ / dataset_maker/ live one
 # level up, at models/neuroBOLT/ -- this file is in experiments/ (ADR-0004).
-# Resolve that directory relative to this file and add it to sys.path so the
-# sibling modules imported below can be found regardless of the working
-# directory the script is launched from.
 code_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(code_path)
 
@@ -70,9 +54,6 @@ from dataset_maker import get_datasets
 from scipy import interpolate
 import arch.model
 
-# ---------------------------------------------------------------------------
-# Filesystem locations
-# ---------------------------------------------------------------------------
 # LaBraM pretrained weights to finetune from (read-only backup location)
 labram_ckpt_path = "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/checkpoints/labram-base.pth"
 # Writable location for NeuroBOLT outputs (checkpoints, logs, plots) — kept
@@ -81,16 +62,9 @@ checkpoint_path = "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/checkpoint
 
 # ---- Algermissen (VS timecourse) dataset ----
 # Per-block npz files from import_and_preproc_algermissen_vstc.py
-ALGERMISSEN_DATA_ROOT = "/data/p_03183/data/pav_algermissen/derived/py_imported/per_block/for_NeuroBOLT/"
-# Subjects to exclude from the training loop (e.g. failed preprocessing / QC).
+ALGERMISSEN_DATA_ROOT = "/data/p_03183/data/pav_algermissen/derived/py_imported/vs_tc_200hz/"
 ALGERMISSEN_SKIP      = {"sub-004", "sub-015", "sub-025"}
 
-# ---------------------------------------------------------------------------
-# Experiment configuration
-# ---------------------------------------------------------------------------
-# `args` is configured here as a plain Namespace (instead of via
-# argparse.parse_args()) so every hyperparameter for this experiment is
-# visible and editable in one place.
 args = argparse.Namespace()
 
 # Update args with platform-aware paths
@@ -113,12 +87,13 @@ args.wandb_key = (open(_wandb_keyfile).read().strip()
                   if os.path.exists(_wandb_keyfile) else None)
 
 
-# ---- Core optimization hyperparameters ----
+
 args.lr = 1e-4                        # Learning rate
-args.batch_size = 8                 # Training batch size
+args.batch_size = 32                  # Training batch size
 args.epochs = 20                      # Number of training epochs
 args.drop = 0.3                       # Dropout rate
 args.weight_decay = 0.01              # Weight decay
+
 
 
 # Set device based on actual CUDA availability
@@ -126,15 +101,15 @@ args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"                       using device: {args.device}")
 
 
-# ---- Model / architecture configuration ----
+
 args.model = 'neurobolt_default'      # Model architecture to use
 args.nb_eegchan = 63                  # Number of EEG channels
 args.train_test_mode = 'intrascan'    # Training mode
-args.update_freq = 2                  # Update frequency (gradient accumulation steps)
+args.update_freq = 1                  # Update frequency
 args.save_ckpt_freq = 5               # Save checkpoint frequency
 args.robust_test = None               # Robust evaluation dataset
 args.qkv_bias = False                 # Use qkv bias
-args.rel_pos_bias = False             # Use relative position bias
+args.rel_pos_bias = False             # Use relative position bias  
 args.disable_eval_during_finetuning = False
 args.abs_pos_emb = True               # Use absolute position embedding
 args.layer_scale_init_value = 0.1     # Layer scale initialization value
@@ -159,7 +134,7 @@ args.smoothing = 0.1                  # Label smoothing
 args.reprob = 0.25                    # Random erase prob
 args.remode = 'pixel'                 # Random erase mode
 args.recount = 1                      # Random erase count
-args.resplit = False                  # Random erase resplit
+args.resplit = False                  # Random erase resplit    
 args.model_key = 'model|module'       # Model key
 args.model_prefix = ''                # Model prefix
 args.model_filter_name = 'gzp'        # Model filter name
@@ -184,44 +159,23 @@ args.local_rank = -1                   # Local rank
 args.dist_on_itp = False               # Distributed on ITP
 args.dist_url = 'env://'               # Distributed URL
 args.enable_deepspeed = False          # Enable DeepSpeed
-
-# ---- Dataset / task configuration ----
 args.atlas = 'Difumo'                  # Atlas used for extracting ROI
 args.nb_roi = 1                        # Number of the output ROI
 args.labels_roi = 'VS'                 # fMRI ROI name in str
 args.dataset = 'algermissen'           # Dataset (algermissen / VU)
 args.prepro_datapath = None            # Path to the preprocessed epoch datasets
 args.save_input_tensor = False         # Flag to save the input tensor when do inter-subject training
-args.train_test_mode = 'intrascan'     # Intrascan/full_test/full_retainvu/  (overrides the earlier duplicate default)
+args.train_test_mode = 'intrascan'     # Intrascan/full_test/full_retainvu/
 args.split_index_sheet = './scan_split.xlsx'  # Path to the Excel sheet specifying train-test split indices when do cross-subject training
 args.TR = 1.4                          # TR of the fMRI data (Algermissen = 1.4 s)
 args.window_sec = 16                   # EEG window length per epoch (s); 16 s x 200 Hz = 3200
 args.model_hz = 200                    # Target EEG sampling rate fed to the model (LaBraM = 200 Hz)
-
-# Default 10-20 montage channel names, used as a fallback for datasets other
-# than 'algermissen' (Algermissen's own channel names are read from its npz
-# files and override this list later in get_dataset()).
 args.ch_names = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2', 'F7', 'F8', 'T7', 'T8', 'P7', 'P8', 'Fz', 'Cz', 'Pz', 'Oz',
        'FC1', 'FC2', 'CP1', 'CP2', 'FC5', 'FC6', 'CP5', 'CP6', 'TP9', 'TP10', 'F1', 'F2', 'C1', 'C2', 'P1', 'P2', 'AF3', 'AF4',
        'FC3', 'FC4', 'CP3', 'CP4', 'PO3', 'PO4', 'F5', 'F6', 'C5', 'C6', 'P5', 'P6', 'AF7', 'AF8', 'FT7', 'FT8', 'TP7', 'TP8', 'FT9',
        'FT10', 'PO9', 'PO10', 'CPz', 'POz']
 
 def get_models(args):
-    """Instantiate the model architecture named by `args.model`.
-
-    Currently only 'neurobolt_default' is supported: it builds a
-    NeuroBOLTransformer via timm's `create_model` registry using
-    hyperparameters pulled off `args`. If `args.EEG_length` is set, it is
-    passed through explicitly so the model's internal MSSEncoder shape can
-    never silently drift out of sync with `window_sec` / `model_hz`.
-
-    Args:
-        args: argparse.Namespace with model hyperparameters.
-
-    Returns:
-        The instantiated model (nn.Module), or None if `args.model` doesn't
-        match a known branch (falls through silently otherwise).
-    """
     if args.model == "neurobolt_default":
         model_kwargs = dict(
             EEG_channel=len(args.ch_names),
@@ -250,24 +204,6 @@ def get_models(args):
 
 
 def get_dataset(args):
-    """Load and split the train/test/val datasets for `args.dataset`.
-
-    Two dataset families are supported:
-      - 'algermissen': continuous per-block npz recordings converted into
-        NeuroBOLT seq2one epochs via `prepare_algermissen_onesub_dataloader`.
-        Channel names are read from the npz files themselves.
-      - anything else (e.g. 'VU'): loaded via the generic
-        `prepare_onesub_dataloader`, using `args.ch_names` as the channel list.
-
-    Args:
-        args: argparse.Namespace with dataset configuration
-            (dataset_root, dataname, model_hz, window_sec, TR, ch_names, ...).
-
-    Returns:
-        Tuple of (train_dataset, test_dataset, val_dataset, ch_names,
-        metrics, spec_chan_ind), where `metrics` is the fixed list
-        ["mse", "corr"] and `spec_chan_ind` is currently always None.
-    """
     spec_chan_ind = None
     metrics = ["mse", "corr"]
 
@@ -293,22 +229,6 @@ def get_dataset(args):
     return train_dataset, test_dataset, val_dataset, ch_names, metrics, spec_chan_ind
 
 def main(args, ds_init):
-    """Run one full training job (all epochs) for a single subject.
-
-    This sets up distributed/GPU context, builds the datasets, dataloaders,
-    model, optimizer, and LR/WD schedules, optionally resumes from a
-    checkpoint, then either runs evaluation only (`args.eval`) or trains for
-    `args.epochs` epochs, logging metrics (stdout, TensorBoard, W&B, and a
-    JSON-lines log file) and periodically saving prediction plots and
-    checkpoints whenever validation MSE improves. Intended to be called once
-    per subject from the `__main__` block below, with `args.dataname` set to
-    the current subject id before each call.
-
-    Args:
-        args: argparse.Namespace with the full experiment configuration.
-        ds_init: DeepSpeed initializer function, or None if DeepSpeed is
-            disabled (`args.enable_deepspeed == False`).
-    """
     if torch.cuda.device_count() > 1:
         # Set distributed training parameters for multi-GPU
         args.distributed = True
@@ -352,9 +272,6 @@ def main(args, ds_init):
     print(f"Val dataset   - EEG: {dataset_val.tensors[0].shape}, fMRI: {dataset_val.tensors[1].shape}")
 
     if True:  # args.distributed:
-        # NOTE: this branch always runs regardless of args.distributed (the
-        # condition is hardcoded to True); the DistributedSampler classes
-        # used below work fine in single-process mode too (world_size=1).
         num_tasks = utils.get_world_size()
         global_rank = utils.get_rank()
         sampler_train = torch.utils.data.DistributedSampler(
@@ -460,8 +377,6 @@ def main(args, ds_init):
         args.patch_size = patch_size
 
     if args.finetune:
-        # Load a pretrained (LaBraM) checkpoint to finetune from, either
-        # from a URL or a local path.
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.finetune, map_location='cpu', check_hash=True)
@@ -470,8 +385,6 @@ def main(args, ds_init):
 
         print("Load ckpt from %s" % args.finetune)
         checkpoint_model = None
-        # Try each candidate key (e.g. 'model', 'module') to find the actual
-        # state_dict inside the checkpoint file.
         for model_key in args.model_key.split('|'):
             if model_key in checkpoint:
                 checkpoint_model = checkpoint[model_key]
@@ -480,9 +393,6 @@ def main(args, ds_init):
         if checkpoint_model is None:
             checkpoint_model = checkpoint
         if (checkpoint_model is not None) and (args.model_filter_name != ''):
-            # Strip a 'student.' prefix (as used by DINO/BEiT-style teacher-
-            # student checkpoints) from matching keys; keys without that
-            # prefix are dropped entirely.
             all_keys = list(checkpoint_model.keys())
             new_dict = OrderedDict()
             for key in all_keys:
@@ -493,8 +403,6 @@ def main(args, ds_init):
             checkpoint_model = new_dict
 
         state_dict = model.state_dict()
-        # Drop the classification head weights if their shape doesn't match
-        # the current model (e.g. different num_roi / output dimension).
         for k in ['head.weight', 'head.bias']:
             if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
                 print(f"Removing key {k} from pretrained checkpoint")
@@ -534,8 +442,6 @@ def main(args, ds_init):
     print("Number of training training per epoch = %d" % num_training_steps_per_epoch)
 
     if args.layer_decay < 1.0 and args.model == "neurobolt_default":
-        # Layer-wise LR decay: earlier transformer layers get progressively
-        # smaller learning rates than later ones.
         num_layers = model_without_ddp.get_num_layers()
         assigner = LayerDecayValueAssigner(
             list(args.layer_decay ** (num_layers + 1 - i) for i in range(num_layers + 2)))
@@ -578,8 +484,6 @@ def main(args, ds_init):
         loss_scaler = NativeScaler()
 
     print("Use step level LR scheduler!")
-    # Cosine LR schedule with warmup, stepped once per training iteration
-    # (not once per epoch) for finer-grained control.
     lr_schedule_values = utils.cosine_scheduler(
         args.lr, args.min_lr, args.epochs, num_training_steps_per_epoch,
         warmup_epochs=args.warmup_epochs, warmup_steps=args.warmup_steps,
@@ -593,14 +497,11 @@ def main(args, ds_init):
     criterion = torch.nn.MSELoss()
     print("criterion = %s" % str(criterion))
 
-    # Resume from a checkpoint if one is configured / auto-detected.
     utils.auto_load_model(
         args=args, model=model, model_without_ddp=model_without_ddp,
         optimizer=optimizer, loss_scaler=loss_scaler, model_ema=model_ema)
 
     if args.eval:
-        # Evaluation-only mode: run over each test dataloader, report
-        # aggregate MSE/correlation stats, and exit without training.
         test_mse = []
         test_corr = []
         for data_loader in data_loader_test:
@@ -654,11 +555,6 @@ def main(args, ds_init):
             test_corr = test_stats["corr"]
             epochname = f"{epoch}" + f"-trcorr{train_corr:.2f}-valmse{val_mse:.4f}-valcorr{val_corr:.4f}-testmse{test_mse:.4f}-testcorr{test_corr:.4f}"
             if min_mse > val_stats["mse"]:
-                # New best validation MSE: track the corresponding test
-                # correlation, save a prediction-vs-truth plot, and
-                # checkpoint the model (this is a "best model so far" save,
-                # distinct from the periodic save_ckpt_freq saving above,
-                # which is currently commented out).
                 min_mse = val_stats["mse"]
                 max_corr_test = test_stats["corr"]
                 max_test_corr_glb = test_stats["corr"]
@@ -684,7 +580,7 @@ def main(args, ds_init):
                     val_pred = np.squeeze(val_pred)
                     test_true = np.squeeze(test_true)
                     test_pred = np.squeeze(test_pred)
-
+                    
                     # Validation plot
                     ax1.plot(val_true, 'b-', label='True', alpha=0.7)
                     ax1.plot(val_pred, 'r-', label='Predicted', alpha=0.7)
@@ -693,9 +589,9 @@ def main(args, ds_init):
                     ax1.set_ylabel('Value')
                     ax1.legend()
                     val_corr = val_stats['corr']
-                    ax1.text(0.02, 0.98, f'Correlation: {val_corr:.3f}',
+                    ax1.text(0.02, 0.98, f'Correlation: {val_corr:.3f}', 
                             transform=ax1.transAxes, verticalalignment='top')
-
+                    
                     # Test plot
                     ax2.plot(test_true, 'b-', label='True', alpha=0.7)
                     ax2.plot(test_pred, 'r-', label='Predicted', alpha=0.7)
@@ -704,9 +600,9 @@ def main(args, ds_init):
                     ax2.set_ylabel('Value')
                     ax2.legend()
                     test_corr = test_stats['corr']
-                    ax2.text(0.02, 0.98, f'Correlation: {test_corr:.3f}',
+                    ax2.text(0.02, 0.98, f'Correlation: {test_corr:.3f}', 
                             transform=ax2.transAxes, verticalalignment='top')
-
+                    
                     plt.tight_layout()
                     save_path = os.path.join(args.output_dir, f'predictions_vs_true_epoch{epoch}.png')
                     plt.savefig(save_path)
@@ -767,7 +663,6 @@ def main(args, ds_init):
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:
                 log_writer.flush()
-            # Append this epoch's stats as one JSON line for easy later parsing.
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
@@ -802,9 +697,6 @@ if __name__ == '__main__':
 
     if args.dataset == 'algermissen':
         # Intra-subject training: fit one NeuroBOLT model per subject.
-        # Discover subject ids from the per-block npz filenames
-        # (e.g. "sub-001_block1.npz" -> "sub-001"), then drop any subjects
-        # listed in ALGERMISSEN_SKIP.
         all_files = os.listdir(args.dataset_root)
         subjects = sorted({
             f.split('_block')[0] for f in all_files
@@ -813,8 +705,6 @@ if __name__ == '__main__':
         subjects = [s for s in subjects if s not in ALGERMISSEN_SKIP]
         print(f"Algermissen subjects to train: {subjects}")
 
-        # Train one full model per subject, reusing the same `args` object
-        # (only `args.dataname` changes between iterations).
         for subject in subjects:
             print(f"\n{'='*60}\nStarting NeuroBOLT training for {subject}\n{'='*60}\n")
             args.dataname = subject
@@ -823,3 +713,7 @@ if __name__ == '__main__':
         print("\nAll subjects completed!")
     else:
         main(args, ds_init)
+
+
+
+

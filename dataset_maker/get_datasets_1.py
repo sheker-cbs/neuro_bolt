@@ -1,19 +1,3 @@
-"""
-dataset_maker.get_datasets
-
-Helpers for turning raw EEG/fMRI recordings on disk into
-`torch.utils.data.TensorDataset` train/val/test splits that NeuroBOLT's
-training loop can consume.
-
-Two loading paths are provided:
-  - `prepare_algermissen_onesub_dataloader`: builds seq2one (EEG window ->
-    single fMRI ROI value) epochs from the continuous, per-block Algermissen
-    npz files, epoching onto the fMRI TR grid.
-  - `prepare_onesub_dataloader` (+ `load_npz_dataset`): a more generic path
-    for datasets that are already stored as a single pre-epoched npz file
-    (e.g. the "VU" dataset), with a simple time-ordered 80/10/10 split.
-"""
-
 import mne
 import os
 import json
@@ -40,24 +24,7 @@ def convert_to_tensor(data):
 
 
 def load_npz_dataset(path_to_dataset, ch_names):
-    """Load EEG and fMRI data from .npz file.
-
-    Expects the npz file at `path_to_dataset` to contain 'eeg' and 'fmri'
-    arrays. The EEG array is cropped to the first 3200 samples (the
-    NeuroBOLT model's expected input length, i.e. 16 s @ 200 Hz).
-
-    Note: `ch_names` is currently unused — channel selection by name is
-    disabled below (see the commented-out filtering lines); all channels in
-    the 'eeg' array are returned as-is.
-
-    Args:
-        path_to_dataset: Path to the .npz file to load.
-        ch_names: List of channel names (currently unused; kept for API
-            compatibility / potential future channel filtering).
-
-    Returns:
-        Tuple of (eeg_data, fmri_data) as loaded from the npz file.
-    """
+    """Load EEG and fMRI data from .npz file."""
     data = np.load(path_to_dataset, allow_pickle=True)
     
     # Print data structure for debugging
@@ -107,8 +74,6 @@ def _load_algermissen_blocks(dataset_root, subject, n_runs):
         time_idx = chs.index("time")
         block_ch = [str(chs[i]) for i in eeg_idx]
         if ch_names is None:
-            # First block encountered defines the reference channel order;
-            # every subsequent block is checked against it below.
             ch_names = block_ch
         elif block_ch != ch_names:
             raise RuntimeError(f"Channel order mismatch in {path}")
@@ -146,23 +111,7 @@ def prepare_algermissen_onesub_dataloader(dataset_root, subject, model_hz=200,
     the boundary. fMRI targets are z-scored using train statistics; EEG is left
     in microvolts (the engine divides by 100, matching LaBraM's input scale).
 
-    Args:
-        dataset_root: Directory containing the per-block npz files.
-        subject: Subject id, used to build the `{subject}_block{b}.npz` filenames.
-        model_hz: Target EEG sampling rate the model expects (LaBraM = 200 Hz).
-        window_sec: Length, in seconds, of the EEG window preceding each fMRI
-            target sample.
-        tr: fMRI repetition time in seconds (defines the target sampling grid).
-        n_runs: Number of block files to look for (1..n_runs); missing blocks
-            are skipped with a warning.
-        val_frac: Fraction of epochs (by count, in time order) held out for
-            validation.
-        test_frac: Fraction of epochs (by count, in time order) held out for
-            testing.
-        eeg_to_uv: If True, convert EEG from volts to microvolts.
-
-    Returns:
-        dataset_train, dataset_test, dataset_val, ch_names
+    Returns: dataset_train, dataset_test, dataset_val, ch_names
     """
     seed = 12345
     torch.manual_seed(seed)
@@ -181,9 +130,6 @@ def prepare_algermissen_onesub_dataloader(dataset_root, subject, model_hz=200,
     for eeg, tvec, vs in blocks:
         src_hz = _infer_hz(tvec)
         if src_hz != model_hz:
-            # Resample EEG (and re-grid VS onto the new sample count via
-            # linear interpolation) whenever the block's native rate
-            # doesn't already match the model's expected rate.
             from mne.filter import resample
             if model_hz > src_hz:
                 print(f"  NOTE: upsampling EEG {src_hz} -> {model_hz} Hz "
@@ -205,8 +151,6 @@ def prepare_algermissen_onesub_dataloader(dataset_root, subject, model_hz=200,
             end = int(round(k * tr * model_hz))
             if end > n_samp:
                 break
-            # Epoch k: the `win` EEG samples immediately preceding `end`,
-            # paired with the VS value at (approximately) time `end`.
             epochs_eeg.append(eeg[:, end - win:end].astype(np.float32))
             epochs_vs.append(np.float32(vs[min(end, n_samp - 1)]))
             k += 1
@@ -218,10 +162,6 @@ def prepare_algermissen_onesub_dataloader(dataset_root, subject, model_hz=200,
           f"(EEG {eeg_arr.shape[1]}ch x {eeg_arr.shape[2]} samp @ {model_hz}Hz)")
 
     # ── time-ordered 80/10/10 split with anti-leakage gaps ────────────────────
-    # `gap` epochs are skipped between splits because consecutive epochs'
-    # EEG windows overlap (each window is `window_sec` long but epochs are
-    # only `tr` seconds apart); skipping `gap` epochs ensures no val/test
-    # epoch's EEG window shares samples with a train epoch's window.
     gap        = int(np.ceil(window_sec / tr))  # epochs whose windows may overlap
     train_end  = int((1.0 - val_frac - test_frac) * M)
     val_start  = train_end + gap
@@ -240,7 +180,6 @@ def prepare_algermissen_onesub_dataloader(dataset_root, subject, model_hz=200,
     vs_norm = (vs_arr - vs_mean) / vs_std
 
     def _ds(sl):
-        """Build a TensorDataset for the epoch index slice `sl`."""
         eeg_t = torch.tensor(eeg_arr[sl], dtype=torch.float32)
         vs_t  = torch.tensor(vs_norm[sl], dtype=torch.float32)  # 1-D [n]
         return torch.utils.data.TensorDataset(eeg_t, vs_t)
@@ -255,25 +194,6 @@ def prepare_algermissen_onesub_dataloader(dataset_root, subject, model_hz=200,
 
 
 def prepare_onesub_dataloader(dataset_root, dataname, ch_names):
-    """Load a single pre-epoched npz file and split it into train/val/test.
-
-    Unlike `prepare_algermissen_onesub_dataloader` (which builds epochs from
-    continuous per-block recordings), this assumes `dataname` already points
-    to a single npz file containing pre-epoched 'eeg' and 'fmri' arrays
-    (loaded via `load_npz_dataset`). The split is a simple time-ordered
-    80/10/10 cut, with a gap (`N_overlap`) inserted after the train and val
-    cuts to account for fMRI hemodynamic response autocorrelation and avoid
-    data leakage across the split boundaries.
-
-    Args:
-        dataset_root: Directory containing the dataset file.
-        dataname: Filename (relative to `dataset_root`) of the npz file to load.
-        ch_names: Channel names, forwarded to `load_npz_dataset` (currently
-            unused there).
-
-    Returns:
-        dataset_train, dataset_test, dataset_val
-    """
     # Set random seed
     seed = 12345
     torch.manual_seed(seed)
@@ -299,8 +219,6 @@ def prepare_onesub_dataloader(dataset_root, dataname, ch_names):
     t_overlap = 20 if abs(tmin) <= 20 else abs(tmin)  # Length of HRF consideration
     N_overlap = math.ceil(t_overlap / tr)
 
-    # Skip N_overlap samples after each cut point so that no val/test sample
-    # falls within the fMRI hemodynamic response window of a train sample.
     traincrop += N_overlap
     eeg_val = eeg_data[traincrop:valcrop]
     fmri_val = fmri_data[traincrop:valcrop]
@@ -326,3 +244,4 @@ def prepare_onesub_dataloader(dataset_root, dataname, ch_names):
     dataset_test = torch.utils.data.TensorDataset(eeg_test_tensor, fmri_test_tensor)
     
     return dataset_train, dataset_test, dataset_val
+

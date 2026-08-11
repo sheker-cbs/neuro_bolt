@@ -23,7 +23,7 @@ from timm.models.layers import drop_path, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
 from einops import rearrange
 from models.model_multiscale import MSSEncoder
-from models.new_layers import BandAttention, ChannelAttention #importing new attention layeres
+
 
 def _cfg(url='', **kwargs):#not sure if this is being used anywhere in the code
     return {

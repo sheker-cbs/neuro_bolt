@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 821, in <module>
+    main(args, ds_init)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 673, in main
+    val_pred = torch.cat(val_stats['predictions'], dim=0).cpu().numpy()
+KeyError: 'predictions'

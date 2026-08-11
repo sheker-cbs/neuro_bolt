@@ -214,6 +214,18 @@ def evaluate(data_loader, model, device, header='Test:', ch_names=None, metrics=
         pred = torch.cat(pred, dim=0).numpy()
         true = torch.cat(true, dim=0).numpy()
 
+    # ret = utils.get_metrics(pred, true, metrics, is_binary)
+    # ret['loss'] = metric_logger.loss.global_avg
+    # return ret
+
+    # ret = utils.get_metrics(pred, true, metrics, is_binary)
+    # ret['loss'] = metric_logger.loss.global_avg
+    # ret['pred'] = pred
+    # ret['true'] = true
+    # return ret
+
     ret = utils.get_metrics(pred, true, metrics, is_binary)
     ret['loss'] = metric_logger.loss.global_avg
+    ret['true'] = true
+    ret['predictions'] = pred
     return ret

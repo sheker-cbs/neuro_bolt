@@ -19,13 +19,23 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from timm.models.layers import drop_path, trunc_normal_
+from timm.models.layers import drop_path, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
 from einops import rearrange
-from arch.model_multiscale import MSSEncoder
+from models.model_multiscale import MSSEncoder
 
 
-class DropPath(nn.Module):
+def _cfg(url='', **kwargs):#not sure if this is being used anywhere in the code
+    return {
+        'url': url,
+        'num_classes': 1000, 'input_size': (3, 224, 224), 'pool_size': None,  # todo,change this
+        'crop_pct': .9, 'interpolation': 'bicubic',
+        'mean': (0.5, 0.5, 0.5), 'std': (0.5, 0.5, 0.5),
+        **kwargs
+    }
+
+
+class DropPath(nn.Module): #drops blocks as regularization
     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
     """
 
@@ -40,7 +50,7 @@ class DropPath(nn.Module):
         return 'p={}'.format(self.drop_prob)
 
 
-class Mlp(nn.Module):
+class Mlp(nn.Module):#feed forward block (standard in transformers ); linear-->gelu-->linear
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
         out_features = out_features or in_features
@@ -60,7 +70,7 @@ class Mlp(nn.Module):
         return x
 
 
-class Attention(nn.Module):
+class Attention(nn.Module):#multi-head self attention
     def __init__(
             self, dim, num_heads=8, qkv_bias=False, qk_norm=None, qk_scale=None, attn_drop=0.,
             proj_drop=0., window_size=None, attn_head_dim=None):
@@ -87,7 +97,7 @@ class Attention(nn.Module):
             self.q_norm = None
             self.k_norm = None
 
-        if window_size:
+        if window_size: #relative position bias (usually used in vision transformer machinery) #not actually used in here 
             self.window_size = window_size
             self.num_relative_distance = (2 * window_size[0] - 1) * (2 * window_size[1] - 1) + 3
             self.relative_position_bias_table = nn.Parameter(
@@ -121,7 +131,7 @@ class Attention(nn.Module):
         self.proj = nn.Linear(all_head_dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x, rel_pos_bias=None, return_attention=False, return_qkv=False):
+    def forward(self, x, rel_pos_bias=None, return_attention=False, return_qkv=False): #combined q,k,v projection (computes queries, keys, adn values in one matrix multiply, then splits them instead of having three linear layers)
         B, N, C = x.shape
         qkv_bias = None
         if self.q_bias is not None:
@@ -152,7 +162,7 @@ class Attention(nn.Module):
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
-        if return_attention:
+        if return_attention: 
             return attn
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
@@ -166,7 +176,7 @@ class Attention(nn.Module):
         return x
 
 
-class Block(nn.Module):
+class Block(nn.Module):#transofrmer encoder layer
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_norm=None, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, act_layer=nn.GELU, norm_layer=nn.LayerNorm,
                  window_size=None, attn_head_dim=None):
@@ -205,7 +215,7 @@ class Block(nn.Module):
         return x
 
 
-class PatchEmbed(nn.Module):
+class PatchEmbed(nn.Module):# Conv2d-based patch embedding for the "neural decoder" mode; looks like is not used in the project
     """ EEG to Patch Embedding
     """
 
@@ -220,7 +230,7 @@ class PatchEmbed(nn.Module):
         return x
 
 
-class TemporalConv(nn.Module):
+class TemporalConv(nn.Module): #transforms raw eeg into patches
     """ EEG to Patch Embedding
     """
 
@@ -251,7 +261,7 @@ class TemporalConv(nn.Module):
         return x
 
 
-class NeuroBOLTransformer(nn.Module):
+class NeuroBOLTransformer(nn.Module): #assembles two branches (spatiotemporal and spectral)
     def __init__(self, EEG_length=3200, EEG_channel=26, patch_size=200, in_chans=1, out_chans=8, num_roi=1, embed_dim=200, win_level=3,
                  depth=12,
                  num_heads=10, mlp_ratio=4., qkv_bias=False, qk_norm=None, qk_scale=None, drop_rate=0.,
@@ -294,17 +304,21 @@ class NeuroBOLTransformer(nn.Module):
             for i in range(depth)])
         self.norm = nn.Identity() if use_mean_pooling else norm_layer(embed_dim)
         self.fc_norm = norm_layer(embed_dim) if use_mean_pooling else None
+        # todo new for hook
+        # self.fc_norm2 = norm_layer(embed_dim) if use_mean_pooling else None
 
         self.head = nn.Linear(embed_dim, num_roi) if num_roi > 0 else nn.Identity()
 
         self.mss_module = MSSEncoder(num_roi=num_roi, emb_size=embed_dim, n_channels=EEG_channel, num_heads=8, scale1=100,
                                      input_length=EEG_length, win_level=win_level)
+        self.head_act = nn.GELU()
 
         if self.pos_embed is not None:
             trunc_normal_(self.pos_embed, std=.02)
         if self.time_embed is not None:
             trunc_normal_(self.time_embed, std=.02)
         trunc_normal_(self.cls_token, std=.02)
+        # trunc_normal_(self.mask_token, std=.02)
         if isinstance(self.head, nn.Linear):
             trunc_normal_(self.head.weight, std=.02)
         self.apply(self._init_weights)
@@ -389,7 +403,7 @@ class NeuroBOLTransformer(nn.Module):
         x_tmp = self.forward_ts_features(x, input_chans=input_chans, return_patch_tokens=return_patch_tokens,
                                          return_all_tokens=return_all_tokens, **kwargs)
         x_mss = self.mss_module(rearrange(x, 'B N A T -> B N (A T)'), input_chans=input_chans_spect)
-        x = self.head(x_mss + x_tmp)
+        x = self.head(self.head_act(x_mss + x_tmp)) # here adding activation function is optional, you can also directly add x_mss and x_tmp
         return x
 
 
@@ -397,5 +411,7 @@ class NeuroBOLTransformer(nn.Module):
 def neurobolt_default(pretrained=False, **kwargs):
     model = NeuroBOLTransformer(
         patch_size=200, embed_dim=200, depth=12, num_heads=10, mlp_ratio=4, qk_norm=partial(nn.LayerNorm, eps=1e-6),
+        # qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    # model.default_cfg = _cfg()
     return model

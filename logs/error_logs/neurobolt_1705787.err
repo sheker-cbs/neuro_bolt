@@ -1,6 +1,0 @@
-Traceback (most recent call last):
-  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 821, in <module>
-    main(args, ds_init)
-  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 671, in main
-    if isinstance(val_stats['true'], list):
-KeyError: 'true'

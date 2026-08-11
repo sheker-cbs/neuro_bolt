@@ -14,11 +14,11 @@ cd /data/p_03183/personal_workspaces/sheker/NeuroBOLT
 
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 
-python main.py \
-  --finetune ./checkpoints/labram-base.pth \
-  --labels_roi VS \
-  --dataset mydata \
-  --train_test_mode full_test \
-  --prepro_datapath ./my_data_seq2one.pkl
+# python main.py \
+#   --finetune ./checkpoints/labram-base.pth \
+#   --labels_roi VS \
+#   --dataset mydata \
+#   --train_test_mode full_test \
+#   --prepro_datapath ./my_data_seq2one.pkl
 
 

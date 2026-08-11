@@ -9,12 +9,15 @@ https://github.com/thuml/Time-Series-Library
 ---------------------------------------------------------
 """
 
+import time
 import math
 
-import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
 from linear_attention_transformer import LinearAttentionTransformer
+from einops import rearrange
 
 
 class PatchFrequencyEmbedding(nn.Module):
@@ -48,11 +51,25 @@ class PatchWindowEmbedding(nn.Module):
         return x
 
 
+class ClassificationHead(nn.Sequential):
+    def __init__(self, emb_size, n_classes):
+        super().__init__()
+        self.clshead = nn.Sequential(
+            nn.ELU(),
+            nn.Linear(emb_size, n_classes),
+        )
+
+    def forward(self, x):
+        out = self.clshead(x)
+        return out
+
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 1000):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
+        # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len).unsqueeze(1).float()
         div_term = torch.exp(
@@ -64,6 +81,12 @@ class PositionalEncoding(nn.Module):
         self.register_buffer("pe", pe)
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
+        """
+        Args:
+            x: `embeddings`, shape (batch, max_len, d_model)
+        Returns:
+            `encoder input`, shape (batch, max_len, d_model)
+        """
         x = x + self.pe[:, : x.size(1)]
         return self.dropout(x)
 

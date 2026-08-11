@@ -19,49 +19,31 @@ model per subject on the "Algermissen" EEG/fMRI dataset, using intra-subject
 ("intrascan") training. Configuration is done by directly setting attributes
 on an `argparse.Namespace` object (rather than parsing CLI flags), so the
 script is meant to be run as-is or edited in place for a given experiment.
-
-Inert-code markers
-------------------
-Lines tagged ``# INERT:`` are unused by the live Algermissen path and can be
-removed without changing current training behaviour. Tags:
-  - INERT:              truly dead (never referenced / unreachable)
-  - INERT (config):     unused while defaults stay as set (safe if you never
-                        flip the related flag / switch datasets)
 """
 
 import argparse
 import datetime
-# INERT: unused import; also shadows the local variable `model` below.
-# from pyexpat import model
 import numpy as np
 import time
 import torch
 import torch.backends.cudnn as cudnn
 import json
 import os
-# INERT: pandas never referenced in this file.
-# import pandas as pd
 import sys
-# INERT: platform only appeared in the commented Windows/Colab path block below.
-# import platform
+import platform
 from pathlib import Path
 from collections import OrderedDict
-# INERT: Mixup never instantiated (classification-template leftover).
-# from timm.data.mixup import Mixup
 from timm.models import create_model
-# INERT: classification losses unused — training uses torch.nn.MSELoss().
-# from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.utils import ModelEma
 import matplotlib.pyplot as plt
-# INERT (config): wandb import is commented out; W&B block below is also off
-# because args.use_wandb=False. Enabling W&B without uncommenting this will crash.
 # import wandb
 
 
 # ---------------------------------------------------------------------------
 # Path resolution
 # ---------------------------------------------------------------------------
-# INERT: older Windows/Colab path hints — fully commented; safe to delete.
+# Older Windows/Colab path hints, kept for reference but disabled.
 #if platform.system() == 'Windows':
 #    code_path = 'c:/Users/herzo/Documents/work/DLEEGfMRI/NeuroBOLT/code'
 #else:
@@ -77,15 +59,11 @@ code_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(code_path)
 
 from optim_factory import create_optimizer, get_parameter_groups, LayerDecayValueAssigner
-# NOTE: get_parameter_groups is only used inside the DeepSpeed branch
-# (INERT (config) while enable_deepspeed=False).
 from engine import train_one_epoch, evaluate
 from runtime import NativeScalerWithGradNormCount as NativeScaler
 import runtime as utils
 from dataset_maker import get_datasets
-# INERT: scipy.interpolate never referenced in this file.
-# from scipy import interpolate
-# NOT inert — side-effect registers neurobolt_default with timm.
+from scipy import interpolate
 import arch.model
 
 # ---------------------------------------------------------------------------
@@ -119,14 +97,16 @@ args.log_dir = str(Path(checkpoint_path) / 'log/neurobolt_algermissen')
 args.dataname = 'sub-001'        # Subject id (intra-subject training on Algermissen)
 
 # ---- Weights & Biases logging ----
-# INERT (config): entire W&B block is inactive while use_wandb=False (and
-# `import wandb` is commented out above). Removable if you never enable W&B.
-# args.use_wandb     = False
-# args.wandb_project = "neurobolt_algermissen"
-# args.wandb_dir     = str(Path(checkpoint_path))
-# _wandb_keyfile = "/data/p_03183/.wandb_key"
-# args.wandb_key = (open(_wandb_keyfile).read().strip()
-#                   if os.path.exists(_wandb_keyfile) else None)
+# One run per subject. The wandb/ folder is written under the data tree
+# (never the code tree). Set use_wandb = False to disable.
+args.use_wandb     = False
+args.wandb_project = "neurobolt_algermissen"
+args.wandb_dir     = str(Path(checkpoint_path))
+# Same key file every other script in this repo reads (see run_neurobolt_sample_size_sweep.sh,
+# models/beira/slurm/*.sh) -- not hardcoded in source.
+_wandb_keyfile = "/data/p_03183/.wandb_key"
+args.wandb_key = (open(_wandb_keyfile).read().strip()
+                  if os.path.exists(_wandb_keyfile) else None)
 
 
 # ---- Core optimization hyperparameters ----
@@ -144,100 +124,83 @@ print(f"                       using device: {args.device}")
 
 # ---- Model / architecture configuration ----
 args.model = 'neurobolt_default'      # Model architecture to use
-# INERT: args.nb_eegchan never read — channel count comes from npz / args.ch_names.
-# args.nb_eegchan = 63
-# INERT: duplicate of args.train_test_mode set again under Dataset config below.
-# args.train_test_mode = 'intrascan'
+args.nb_eegchan = 63                  # Number of EEG channels
+args.train_test_mode = 'intrascan'    # Training mode
 args.update_freq = 2                  # Update frequency (gradient accumulation steps)
-# INERT (config): periodic save uses save_ckpt_freq but that save block is commented out.
-# args.save_ckpt_freq = 5
-# INERT: args.robust_test never referenced in this file / live helpers.
-# args.robust_test = None
+args.save_ckpt_freq = 5               # Save checkpoint frequency
+args.robust_test = None               # Robust evaluation dataset
 args.qkv_bias = False                 # Use qkv bias
 args.rel_pos_bias = False             # Use relative position bias
-# INERT: args.disable_eval_during_finetuning never referenced.
-# args.disable_eval_during_finetuning = False
+args.disable_eval_during_finetuning = False
 args.abs_pos_emb = True               # Use absolute position embedding
 args.layer_scale_init_value = 0.1     # Layer scale initialization value
 args.input_size = 200                 # EEG input size
 args.attn_drop_rate = 0.0             # Attention dropout rate
 args.drop_path = 0.1                  # Drop path rate
-# INERT (config): EMA block below never runs while model_ema=False.
-# args.model_ema = False
-# args.model_ema_decay = 0.9999
-# args.model_ema_force_cpu = False
+args.model_ema = False                # Use model EMA
+args.model_ema_decay = 0.9999         # Model EMA decay
+args.model_ema_force_cpu = False      # Model EMA force CPU
 args.opt = 'adamw'                    # Optimizer
 args.opt_eps = 1e-8                   # Optimizer epsilon
 args.opt_betas = None                 # Optimizer betas
 args.clip_grad = None                 # Clip gradient norm
-# INERT (config): momentum only matters for SGD; opt is adamw.
-# args.momentum = 0.9
+args.momentum = 0.9                   # SGD momentum
 args.weight_decay_end = None          # Final value of the weight decay
 args.layer_decay = 0.65               # Layer decay
 args.warmup_lr = 1e-6                 # Warmup learning rate
 args.min_lr = 1e-6                    # Lower LR bound
 args.warmup_epochs = 5                # Warmup epochs
 args.warmup_steps = -1                # Warmup steps
-# INERT: classification / RandAugment leftovers — never read by MSE training path.
-args.smoothing = 0.1
-args.reprob = 0.25
-args.remode = 'pixel'
-args.recount = 1
-args.resplit = False
+args.smoothing = 0.1                  # Label smoothing
+args.reprob = 0.25                    # Random erase prob
+args.remode = 'pixel'                 # Random erase mode
+args.recount = 1                      # Random erase count
+args.resplit = False                  # Random erase resplit
 args.model_key = 'model|module'       # Model key
 args.model_prefix = ''                # Model prefix
 args.model_filter_name = 'gzp'        # Model filter name
 args.init_scale = 0.001               # Initialization scale
 args.use_mean_pooling = True          # Use mean pooling
-# INERT: args.use_cls never referenced.
-# args.use_cls = False
+args.use_cls = False                  # Use classification
 args.disable_weight_decay_on_rel_pos_bias = False
 args.seed = 12345                      # Seed
 args.resume = ''                      # Resume
 args.auto_resume = False              # Auto resume
-# INERT: args.no_auto_resume never referenced (auto_resume is set directly).
-# args.no_auto_resume = False
+args.no_auto_resume = False           # No auto resume
 args.save_ckpt = True                 # Save checkpoint
-# INERT: args.no_save_ckpt never referenced (save_ckpt is set directly).
-# args.no_save_ckpt = False
+args.no_save_ckpt = False             # No save checkpoint
 args.start_epoch = 0
-# INERT (config): eval-only early-exit below never runs while eval=False.
-# args.eval = False
+args.eval = False                      # Perform evaluation only
 args.dist_eval = True                  # Enabling distributed evaluation
 args.num_workers = 1                   # Number of workers
 args.pin_mem = True                    # Pin memory
-# INERT: args.no_pin_mem never referenced (pin_mem is set directly).
-# args.no_pin_mem = False
+args.no_pin_mem = False                # No pin memory
 args.world_size = 1                    # Number of distributed processes
 args.local_rank = -1                   # Local rank
 args.dist_on_itp = False               # Distributed on ITP
 args.dist_url = 'env://'               # Distributed URL
-# INERT (config): DeepSpeed branch never runs while enable_deepspeed=False;
-# ds_init is always None in __main__.
-# args.enable_deepspeed = False
+args.enable_deepspeed = False          # Enable DeepSpeed
 
 # ---- Dataset / task configuration ----
-# INERT: args.atlas never referenced on the Algermissen path (VS already in npz).
-# args.atlas = 'Difumo'
+args.atlas = 'Difumo'                  # Atlas used for extracting ROI
 args.nb_roi = 1                        # Number of the output ROI
-args.labels_roi = 'VS'                 # fMRI ROI name in str (used in checkpoint subdir naming)
+args.labels_roi = 'VS'                 # fMRI ROI name in str
 args.dataset = 'algermissen'           # Dataset (algermissen / VU)
-# INERT (config): prepro_datapath / save_input_tensor / split_index_sheet are
-# VU / cross-subject leftovers — unused while dataset='algermissen'.
-# args.prepro_datapath = None
-# args.save_input_tensor = False
-args.train_test_mode = 'intrascan'     # overrides the earlier duplicate default
-# args.split_index_sheet = './scan_split.xlsx'
+args.prepro_datapath = None            # Path to the preprocessed epoch datasets
+args.save_input_tensor = False         # Flag to save the input tensor when do inter-subject training
+args.train_test_mode = 'intrascan'     # Intrascan/full_test/full_retainvu/  (overrides the earlier duplicate default)
+args.split_index_sheet = './scan_split.xlsx'  # Path to the Excel sheet specifying train-test split indices when do cross-subject training
 args.TR = 1.4                          # TR of the fMRI data (Algermissen = 1.4 s)
 args.window_sec = 16                   # EEG window length per epoch (s); 16 s x 200 Hz = 3200
 args.model_hz = 200                    # Target EEG sampling rate fed to the model (LaBraM = 200 Hz)
 
-# INERT (config): default 10-20 montage — overwritten from Algermissen npz in
-# get_dataset(); only used by the non-algermissen else branch.
-# args.ch_names = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2', 'F7', 'F8', 'T7', 'T8', 'P7', 'P8', 'Fz', 'Cz', 'Pz', 'Oz',
-#        'FC1', 'FC2', 'CP1', 'CP2', 'FC5', 'FC6', 'CP5', 'CP6', 'TP9', 'TP10', 'F1', 'F2', 'C1', 'C2', 'P1', 'P2', 'AF3', 'AF4',
-#        'FC3', 'FC4', 'CP3', 'CP4', 'PO3', 'PO4', 'F5', 'F6', 'C5', 'C6', 'P5', 'P6', 'AF7', 'AF8', 'FT7', 'FT8', 'TP7', 'TP8', 'FT9',
-#        'FT10', 'PO9', 'PO10', 'CPz', 'POz']
+# Default 10-20 montage channel names, used as a fallback for datasets other
+# than 'algermissen' (Algermissen's own channel names are read from its npz
+# files and override this list later in get_dataset()).
+args.ch_names = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2', 'F7', 'F8', 'T7', 'T8', 'P7', 'P8', 'Fz', 'Cz', 'Pz', 'Oz',
+       'FC1', 'FC2', 'CP1', 'CP2', 'FC5', 'FC6', 'CP5', 'CP6', 'TP9', 'TP10', 'F1', 'F2', 'C1', 'C2', 'P1', 'P2', 'AF3', 'AF4',
+       'FC3', 'FC4', 'CP3', 'CP4', 'PO3', 'PO4', 'F5', 'F6', 'C5', 'C6', 'P5', 'P6', 'AF7', 'AF8', 'FT7', 'FT8', 'TP7', 'TP8', 'FT9',
+       'FT10', 'PO9', 'PO10', 'CPz', 'POz']
 
 def get_models(args):
     """Instantiate the model architecture named by `args.model`.
@@ -301,7 +264,7 @@ def get_dataset(args):
         metrics, spec_chan_ind), where `metrics` is the fixed list
         ["mse", "corr"] and `spec_chan_ind` is currently always None.
     """
-    # spec_chan_ind = None  # INERT (config): always None; plumbing only (engine accepts it).
+    spec_chan_ind = None
     metrics = ["mse", "corr"]
 
     if args.dataset == 'algermissen':
@@ -316,9 +279,8 @@ def get_dataset(args):
                 tr=args.TR,
             )
     else:
-        # INERT (config): non-algermissen / VU branch — never taken while
-        # args.dataset == 'algermissen'.
         ch_names = args.ch_names
+        # Load and split data
         train_dataset, test_dataset, val_dataset = get_datasets.prepare_onesub_dataloader(
             args.dataset_root,
             args.dataname,
@@ -358,9 +320,9 @@ def main(args, ds_init):
         print('Not using distributed mode')
 
     if ds_init is not None:
-        # INERT (config): never entered — __main__ always passes ds_init=None.
         utils.create_ds_config(args)
 
+    #print(args)
 
     device = torch.device(args.device)
 
@@ -385,8 +347,10 @@ def main(args, ds_init):
     print(f"Test dataset  - EEG: {dataset_test.tensors[0].shape}, fMRI: {dataset_test.tensors[1].shape}")
     print(f"Val dataset   - EEG: {dataset_val.tensors[0].shape}, fMRI: {dataset_val.tensors[1].shape}")
 
-    if args.distributed:  # INERT: hardcoded True; original guard was `args.distributed`.
-        # This branch always runs; DistributedSampler is fine with world_size=1.
+    if True:  # args.distributed:
+        # NOTE: this branch always runs regardless of args.distributed (the
+        # condition is hardcoded to True); the DistributedSampler classes
+        # used below work fine in single-process mode too (world_size=1).
         num_tasks = utils.get_world_size()
         global_rank = utils.get_rank()
         sampler_train = torch.utils.data.DistributedSampler(
@@ -401,7 +365,6 @@ def main(args, ds_init):
             sampler_val = torch.utils.data.DistributedSampler(
                 dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=False)
             if type(dataset_test) == list:
-                # INERT (config): Algermissen returns a single TensorDataset, not a list.
                 sampler_test = [torch.utils.data.DistributedSampler(
                     dataset, num_replicas=num_tasks, rank=global_rank, shuffle=False) for dataset in dataset_test]
             else:
@@ -410,10 +373,9 @@ def main(args, ds_init):
         else:
             sampler_val = torch.utils.data.SequentialSampler(dataset_val)
             sampler_test = torch.utils.data.SequentialSampler(dataset_test)
-    # else:
-    #     # INERT: unreachable — `if True` above makes this dead code.
-    #     sampler_train = torch.utils.data.RandomSampler(dataset_train)
-    #     sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+    else:
+        sampler_train = torch.utils.data.RandomSampler(dataset_train)
+        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
     if global_rank == 0 and args.log_dir is not None:
         os.makedirs(args.log_dir, exist_ok=True)
@@ -421,24 +383,24 @@ def main(args, ds_init):
     else:
         log_writer = None
 
-    # INERT (config): W&B init — skipped while use_wandb=False; also needs `import wandb`.
-    # use_wandb = getattr(args, "use_wandb", False) and global_rank == 0
-    # if use_wandb:
-    #     if getattr(args, "wandb_key", None):
-    #         wandb.login(key=args.wandb_key)
-    #     os.makedirs(args.wandb_dir, exist_ok=True)
-    #     wandb.init(
-    #         project=args.wandb_project,
-    #         name=args.dataname,
-    #         group=args.dataset,
-    #         dir=args.wandb_dir,
-    #         reinit=True,
-    #         config={k: v for k, v in vars(args).items()
-    #                 if isinstance(v, (int, float, str, bool, type(None)))},
-    #     )
-    #     wandb.define_metric("val/corr", summary="max")
-    #     wandb.define_metric("test/corr", summary="max")
-    #     wandb.define_metric("val/mse", summary="min")
+    # Weights & Biases: one run per subject (main() is called once per subject).
+    use_wandb = getattr(args, "use_wandb", False) and global_rank == 0
+    if use_wandb:
+        if getattr(args, "wandb_key", None):
+            wandb.login(key=args.wandb_key)
+        os.makedirs(args.wandb_dir, exist_ok=True)
+        wandb.init(
+            project=args.wandb_project,
+            name=args.dataname,
+            group=args.dataset,
+            dir=args.wandb_dir,
+            reinit=True,
+            config={k: v for k, v in vars(args).items()
+                    if isinstance(v, (int, float, str, bool, type(None)))},
+        )
+        wandb.define_metric("val/corr", summary="max")
+        wandb.define_metric("test/corr", summary="max")
+        wandb.define_metric("val/mse", summary="min")
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, sampler=sampler_train,
@@ -450,9 +412,9 @@ def main(args, ds_init):
 
     if dataset_val is not None:
         if args.dataset == "VU" and args.train_test_mode == 'full_test':
-            # INERT (config): VU-only batch-size heuristic — not used for algermissen.
             bs_val = int(len(dataset_val) / 5)
             bs_test = int(len(dataset_test) / 6)
+            # modify to adapt other dataset with different number of scans in test/val for printing metrics
         else:
             bs_val = len(dataset_val)
             bs_test = len(dataset_test)
@@ -465,7 +427,6 @@ def main(args, ds_init):
             drop_last=False
         )
         if type(dataset_test) == list:
-            # INERT (config): Algermissen returns a single TensorDataset, not a list.
             data_loader_test = [torch.utils.data.DataLoader(
                 dataset, sampler=sampler,
                 # batch_size=int(1.5 * args.batch_size),
@@ -540,20 +501,19 @@ def main(args, ds_init):
             if "relative_position_index" in key:
                 checkpoint_model.pop(key)
         utils.load_state_dict(model, checkpoint_model, prefix=args.model_prefix)
-        # INERT: alternate load path — commented out; utils.load_state_dict is used instead.
         # model.load_state_dict(checkpoint['model'])
 
     model.to(device)
 
-    # model_ema = None
-    # if args.model_ema:
-    #     # INERT (config): never entered while args.model_ema=False.
-    #     model_ema = ModelEma(
-    #         model,
-    #         decay=args.model_ema_decay,
-    #         device='cpu' if args.model_ema_force_cpu else '',
-    #         resume='')
-    #     print("Using EMA with decay = %.8f" % args.model_ema_decay)
+    model_ema = None
+    if args.model_ema:
+        # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
+        model_ema = ModelEma(
+            model,
+            decay=args.model_ema_decay,
+            device='cpu' if args.model_ema_force_cpu else '',
+            resume='')
+        print("Using EMA with decay = %.8f" % args.model_ema_decay)
 
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -587,12 +547,10 @@ def main(args, ds_init):
         skip_weight_decay_list = None
 
     if args.disable_weight_decay_on_rel_pos_bias and args.model == "neurobolt_default":
-        # INERT (config): never entered while disable_weight_decay_on_rel_pos_bias=False.
         for i in range(num_layers):
             skip_weight_decay_list.add("blocks.%d.attn.relative_position_bias_table" % i)
 
     if args.enable_deepspeed:
-        # INERT (config): never entered while enable_deepspeed=False / ds_init=None.
         loss_scaler = None
         optimizer_params = get_parameter_groups(
             model, args.weight_decay, skip_weight_decay_list,
@@ -637,7 +595,8 @@ def main(args, ds_init):
         optimizer=optimizer, loss_scaler=loss_scaler, model_ema=model_ema)
 
     if args.eval:
-        # INERT (config): eval-only early exit — never taken while args.eval=False.
+        # Evaluation-only mode: run over each test dataloader, report
+        # aggregate MSE/correlation stats, and exit without training.
         test_mse = []
         test_corr = []
         for data_loader in data_loader_test:
@@ -650,10 +609,9 @@ def main(args, ds_init):
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
-    # INERT: max_corr and min_mse_test are assigned but never read.
-    # max_corr = 0.0
+    max_corr = 0.0
     max_corr_test = 0.0
-    # min_mse = 10
+    min_mse = 10
     min_mse_test = 0.0
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -662,7 +620,6 @@ def main(args, ds_init):
             log_writer.set_step(epoch * num_training_steps_per_epoch * args.update_freq)
 
         if args.model != "neurobolt_default":
-            # INERT (config): never taken while model == 'neurobolt_default'.
             ch_names = None
         train_stats = train_one_epoch(
             model, criterion, data_loader_train, optimizer,
@@ -673,7 +630,7 @@ def main(args, ds_init):
             ch_names=ch_names, is_binary=args.nb_roi == 1, spec_chan=spec_chan_ind
         )
 
-        # INERT: periodic checkpointing is fully commented out; only best-val saves run.
+        # todo: the code below saves the model regularly. uncomment if you want to save regularly
         # if args.output_dir and args.save_ckpt:
         #     utils.save_model(
         #         args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
@@ -700,7 +657,6 @@ def main(args, ds_init):
                 # which is currently commented out).
                 min_mse = val_stats["mse"]
                 max_corr_test = test_stats["corr"]
-                # INERT: written once per best val MSE, never read afterwards.
                 max_test_corr_glb = test_stats["corr"]
 
                 # Only create plots on rank 0
@@ -750,9 +706,8 @@ def main(args, ds_init):
                     plt.tight_layout()
                     save_path = os.path.join(args.output_dir, f'predictions_vs_true_epoch{epoch}.png')
                     plt.savefig(save_path)
-                    # if use_wandb:
-                    #     # INERT (config): skipped while use_wandb=False.
-                    #     wandb.log({"predictions/vs_true": wandb.Image(fig)}, step=epoch)
+                    if use_wandb:
+                        wandb.log({"predictions/vs_true": wandb.Image(fig)}, step=epoch)
                     plt.close()
 
                 if args.output_dir and args.save_ckpt and test_corr > 0:
@@ -792,18 +747,18 @@ def main(args, ds_init):
                          'epoch': epoch,
                          'n_parameters': n_parameters}
 
-        # if use_wandb:
-        #     # INERT (config): skipped while use_wandb=False.
-        #     wandb_log = {}
-        #     for k, v in log_stats.items():
-        #         if k in ("epoch", "n_parameters"):
-        #             continue
-        #         for p in ("train_", "val_", "test_"):
-        #             if k.startswith(p):
-        #                 k = p[:-1] + "/" + k[len(p):]
-        #                 break
-        #         wandb_log[k] = v
-        #     wandb.log(wandb_log, step=epoch)
+        if use_wandb:
+            # Reshape train_/val_/test_ prefixes into wandb "train/…" groups.
+            wandb_log = {}
+            for k, v in log_stats.items():
+                if k in ("epoch", "n_parameters"):
+                    continue
+                for p in ("train_", "val_", "test_"):
+                    if k.startswith(p):
+                        k = p[:-1] + "/" + k[len(p):]
+                        break
+                wandb_log[k] = v
+            wandb.log(wandb_log, step=epoch)
 
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:
@@ -823,21 +778,20 @@ def main(args, ds_init):
     test_stats = evaluate(data_loader_test, model, device, header='Test:', ch_names=ch_names,
                          metrics=metrics, is_binary=args.nb_roi == 1)
 
-    # if use_wandb:
-    #     # INERT (config): skipped while use_wandb=False.
-    #     wandb.log({
-    #         "final/val_corr": float(val_stats["corr"]),
-    #         "final/val_mse":  float(val_stats["mse"]),
-    #         "final/test_corr": float(test_stats["corr"]),
-    #         "final/test_mse":  float(test_stats["mse"]),
-    #     })
-    #     wandb.finish()
+    if use_wandb:
+        wandb.log({
+            "final/val_corr": float(val_stats["corr"]),
+            "final/val_mse":  float(val_stats["mse"]),
+            "final/test_corr": float(test_stats["corr"]),
+            "final/test_mse":  float(test_stats["mse"]),
+        })
+        wandb.finish()
 
 
 
 if __name__ == '__main__':
     # Remove get_args() call since we defined args directly above
-    ds_init = None  # INERT (config): DeepSpeed never enabled; always None.
+    ds_init = None  # Since we're not using DeepSpeed
 
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
@@ -864,5 +818,4 @@ if __name__ == '__main__':
             print(f"Completed training for {subject}")
         print("\nAll subjects completed!")
     else:
-        # INERT (config): non-algermissen entry — never taken while dataset='algermissen'.
         main(args, ds_init)

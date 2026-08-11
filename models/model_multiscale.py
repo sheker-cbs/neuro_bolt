@@ -168,54 +168,53 @@ class MSSEncoder(nn.Module):
 
     def forward(self, x, input_chans=None, n_channel_offset=0, perturb=False):
         """
-            x: [batch_size, channel, ts]
-            output: [batch_size, emb_size]
+        x: [batch_size, channel, ts]
+        output: [batch_size, emb_size]
         """
+        emb_seq = []
+        band_weights_per_channel = []   # FIX: initialized ONCE, outside the channel loop
+        for i in range(x.shape[1]):
+            channel_spec_emb_list = []
+            for n in range(self.win_level + 1):
+                channel_spec_emb_list.append(self.ts_embedding[n](
+                    self.patch_embedding[n](
+                        self.stft(x[:, i: i + 1, :], n_fft=self.scale1 * (2 ** n)))))
 
-    emb_seq = []
-    band_weights_per_channel = []   # FIX: initialized ONCE, outside the channel loop
-    for i in range(x.shape[1]):
-        channel_spec_emb_list = []
-        for n in range(self.win_level + 1):
-            channel_spec_emb_list.append(self.ts_embedding[n](
-                self.patch_embedding[n](
-                    self.stft(x[:, i: i + 1, :], n_fft=self.scale1 * (2 ** n)))))
+            channel_spec_emb, band_weights = self.band_attn(channel_spec_emb_list)
+            band_weights_per_channel.append(band_weights)   # FIX: correct variable name
 
-        channel_spec_emb, band_weights = self.band_attn(channel_spec_emb_list)
-        band_weights_per_channel.append(band_weights)   # FIX: correct variable name
+            batch_size, ts, _ = channel_spec_emb.shape
+            if input_chans is None:
+                channel_token_emb = (
+                    self.channel_tokens(self.index[i + n_channel_offset])
+                    .unsqueeze(0)
+                    .unsqueeze(0)
+                    .repeat(batch_size, ts, 1)
+                )
+            elif input_chans is not None:
+                channel_token_emb = (
+                    self.channel_tokens(self.index[input_chans[i] + n_channel_offset])
+                    .unsqueeze(0)
+                    .unsqueeze(0)
+                    .repeat(batch_size, ts, 1)
+                )
+            channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
 
-        batch_size, ts, _ = channel_spec_emb.shape
-        if input_chans is None:
-            channel_token_emb = (
-                self.channel_tokens(self.index[i + n_channel_offset])
-                .unsqueeze(0)
-                .unsqueeze(0)
-                .repeat(batch_size, ts, 1)
-            )
-        elif input_chans is not None:
-            channel_token_emb = (
-                self.channel_tokens(self.index[input_chans[i] + n_channel_offset])
-                .unsqueeze(0)
-                .unsqueeze(0)
-                .repeat(batch_size, ts, 1)
-            )
-        channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
+            if perturb:
+                ts = channel_emb.shape[1]
+                ts_new = np.random.randint(ts // 2, ts)
+                selected_ts = np.random.choice(range(ts), ts_new, replace=False)
+                channel_emb = channel_emb[:, selected_ts]
+            emb_seq.append(channel_emb)
 
-        if perturb:
-            ts = channel_emb.shape[1]
-            ts_new = np.random.randint(ts // 2, ts)
-            selected_ts = np.random.choice(range(ts), ts_new, replace=False)
-            channel_emb = channel_emb[:, selected_ts]
-        emb_seq.append(channel_emb)
+        emb = torch.cat(emb_seq, dim=1)   # FIX: restored -- this line was commented out
+        n_channels = x.shape[1]
+        ts_per_channel = ts               # FIX: use the actual ts value, not a hardcoded 32
+        emb, channel_weights = self.channel_attn(self.transformer(emb), n_channels=n_channels, ts_per_channel=ts_per_channel)
+        self.last_channel_weights = channel_weights
+        self.last_band_weights = torch.stack(band_weights_per_channel, dim=1)  # (batch, n_channels, n_bands)
+        return emb
 
-    emb = torch.cat(emb_seq, dim=1)   # FIX: restored -- this line was commented out
-    n_channels = x.shape[1]
-    ts_per_channel = ts               # FIX: use the actual ts value, not a hardcoded 32
-    emb, channel_weights = self.channel_attn(self.transformer(emb), n_channels=n_channels, ts_per_channel=ts_per_channel)
-    self.last_channel_weights = channel_weights
-    self.last_band_weights = torch.stack(band_weights_per_channel, dim=1)  # (batch, n_channels, n_bands)
-    return emb
-    
     # def forward(self, x, input_chans=None, n_channel_offset=0, perturb=False):
     #     """
     #     x: [batch_size, channel, ts]

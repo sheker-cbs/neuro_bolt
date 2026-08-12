@@ -302,7 +302,7 @@ class NeuroBOLTransformer(nn.Module): #assembles two branches (spatiotemporal an
 
         self.mss_module = MSSEncoder(num_roi=num_roi, emb_size=embed_dim, n_channels=EEG_channel, num_heads=8, scale1=100,
                                      input_length=EEG_length, win_level=win_level)
-        self.head_act = nn.GELU()
+        # self.head_act = nn.GELU() commented out for cleaner A/B testing
 
         if self.pos_embed is not None:
             trunc_normal_(self.pos_embed, std=.02)

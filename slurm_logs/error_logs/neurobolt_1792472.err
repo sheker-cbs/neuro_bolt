@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 494, in <module>
+    main(args)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 360, in main
+    train_stats = train_one_epoch(
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/engine.py", line 87, in train_one_epoch
+    loss, output = train_class_batch(
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/engine.py", line 24, in train_class_batch
+    outputs = model(samples, ch_names)
+  File "/data/u_atayeva_software/conda/envs/neurobolt/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/models/model.py", line 396, in forward
+    x = self.head(self.head_act(x_mss + x_tmp)) # here adding activation function is optional, you can also directly add x_mss and x_tmp
+  File "/data/u_atayeva_software/conda/envs/neurobolt/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1614, in __getattr__
+    raise AttributeError("'{}' object has no attribute '{}'".format(
+AttributeError: 'NeuroBOLTransformer' object has no attribute 'head_act'

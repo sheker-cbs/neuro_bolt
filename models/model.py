@@ -393,7 +393,8 @@ class NeuroBOLTransformer(nn.Module): #assembles two branches (spatiotemporal an
         x_tmp = self.forward_ts_features(x, input_chans=input_chans, return_patch_tokens=return_patch_tokens,
                                          return_all_tokens=return_all_tokens, **kwargs)
         x_mss = self.mss_module(rearrange(x, 'B N A T -> B N (A T)'), input_chans=input_chans_spect)
-        x = self.head(self.head_act(x_mss + x_tmp)) # here adding activation function is optional, you can also directly add x_mss and x_tmp
+        # x = self.head(self.head_act(x_mss + x_tmp)) # here adding activation function is optional, you can also directly add x_mss and x_tmp
+        x = self.head(x_mss + x_tmp)
         return x
 
 

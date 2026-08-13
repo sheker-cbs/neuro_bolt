@@ -43,7 +43,8 @@ from engine import train_one_epoch, evaluate
 from runtime import NativeScalerWithGradNormCount as NativeScaler
 import runtime as utils
 from dataset_maker import get_datasets
-import arch.model  # side-effect: registers neurobolt_default with timm
+# import arch.model  
+import models.model
 
 # ---------------------------------------------------------------------------
 # Filesystem locations
@@ -61,12 +62,14 @@ args = argparse.Namespace()
 
 args.finetune = labram_ckpt_path
 args.dataset_root = ALGERMISSEN_DATA_ROOT
-args.output_dir = str(Path(checkpoint_path))
-args.log_dir = str(Path(checkpoint_path) / 'log/neurobolt_algermissen')
+# args.output_dir = str(Path(checkpoint_path))
+# args.log_dir = str(Path(checkpoint_path) / 'log/neurobolt_algermissen')
+args.output_dir = str(Path(checkpoint_path) / 'attn')
+args.log_dir = str(Path(checkpoint_path) / 'log/neurobolt_algermissen_attn')
 args.dataname = 'sub-001'
 
 args.lr = 1e-4
-args.batch_size = 8
+args.batch_size = 2
 args.epochs = 20
 args.drop = 0.3
 args.weight_decay = 0.01
@@ -75,7 +78,7 @@ args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"                       using device: {args.device}")
 
 args.model = 'neurobolt_default'
-args.update_freq = 2
+args.update_freq = 4
 args.qkv_bias = False
 args.rel_pos_bias = False
 args.abs_pos_emb = True
@@ -226,8 +229,8 @@ def main(args):
         drop_last=True,
     )
 
-    bs_val = len(dataset_val)
-    bs_test = len(dataset_test)
+    bs_val = args.batch_size
+    bs_test = args.batch_size
     data_loader_val = torch.utils.data.DataLoader(
         dataset_val, sampler=sampler_val,
         batch_size=bs_val,

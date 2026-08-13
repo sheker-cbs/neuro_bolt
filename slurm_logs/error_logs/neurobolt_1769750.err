@@ -1,0 +1,24 @@
+Traceback (most recent call last):
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 491, in <module>
+    main(args)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/main.py", line 366, in main
+    val_stats = evaluate(data_loader_val, model, device, header='Val:', ch_names=ch_names, metrics=metrics,
+  File "/data/u_atayeva_software/conda/envs/neurobolt/lib/python3.9/site-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/engine.py", line 192, in evaluate
+    output = model(EEG, input_chans=input_chans,input_chans_spect=spec_chan)
+  File "/data/u_atayeva_software/conda/envs/neurobolt/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/arch/model.py", line 389, in forward
+    x_tmp = self.forward_ts_features(x, input_chans=input_chans, return_patch_tokens=return_patch_tokens,
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/arch/model.py", line 364, in forward_ts_features
+    x = blk(x, rel_pos_bias=None)
+  File "/data/u_atayeva_software/conda/envs/neurobolt/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/arch/model.py", line 203, in forward
+    x = x + self.drop_path(self.gamma_1 * self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias))
+  File "/data/u_atayeva_software/conda/envs/neurobolt/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/arch/model.py", line 152, in forward
+    attn = attn.softmax(dim=-1)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 9.33 GiB (GPU 0; 15.60 GiB total capacity; 11.29 GiB already allocated; 4.03 GiB free; 11.34 GiB reserved in total by PyTorch) If reserved memory is >> allocated memory try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF

@@ -477,20 +477,50 @@ def main(args):
 
 
 if __name__ == '__main__':
-    if args.output_dir:
-        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    # if args.output_dir:
+    #     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
-    all_files = os.listdir(args.dataset_root)
-    subjects = sorted({
-        f.split('_block')[0] for f in all_files
-        if f.endswith('.npz') and '_block' in f
-    })
-    subjects = [s for s in subjects if s not in ALGERMISSEN_SKIP]
-    print(f"Algermissen subjects to train: {subjects}")
+    # all_files = os.listdir(args.dataset_root)
+    # subjects = sorted({
+    #     f.split('_block')[0] for f in all_files
+    #     if f.endswith('.npz') and '_block' in f
+    # })
+    # subjects = [s for s in subjects if s not in ALGERMISSEN_SKIP]
+    # print(f"Algermissen subjects to train: {subjects}")
+
+
+    checkpoint_root = checkpoint_path
+    Path(checkpoint_root).mkdir(parents=True, exist_ok=True)
+    # ----- LIVE DEFAULT: Algermissen per-subject intrascan -----
+    # SLURM array / NEUROBOLT_SUBJECT → one subject; otherwise loop all.
+    if args.dataset == 'algermissen' and args.train_test_mode == 'intrascan':
+        all_subjects = list_algermissen_subjects(args.dataset_root)
+        subjects = select_subjects(all_subjects)
+        print(f"Algermissen subject list ({len(all_subjects)}): {all_subjects}")
+        print(f"This job will train: {subjects}")
+        for i, s in enumerate(all_subjects):
+            print(f"  array task {i} -> {s}")
+
+    # for subject in subjects:
+    #     print(f"\n{'='*60}\nStarting NeuroBOLT training for {subject}\n{'='*60}\n")
+    #     args.dataname = subject
+    #     main(args)
+    #     print(f"Completed training for {subject}")
+    # print("\nAll subjects completed!")
 
     for subject in subjects:
+            # Skip-completed (not live). Copy into this loop if re-running a
+            # full all-subjects job on `short` after a timeout:
+            # hits = list(Path(checkpoint_root).glob(
+            #     f"runs/*_{subject}/{subject}-VS_smooth_16s-*/checkpoint-epoch*.pth"))
+            # hits += list(Path(checkpoint_root).glob(
+            #     f"{subject}-VS_smooth_16s-*/checkpoint-epoch*.pth"))  # pre-runs/ layout
+            # if hits:
+            #     print(f"Skipping {subject}: found {hits[0]}")
+            #     continue
         print(f"\n{'='*60}\nStarting NeuroBOLT training for {subject}\n{'='*60}\n")
         args.dataname = subject
+        prepare_run_dirs(args, subject, checkpoint_root)
         main(args)
         print(f"Completed training for {subject}")
     print("\nAll subjects completed!")

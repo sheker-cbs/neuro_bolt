@@ -5,8 +5,8 @@
 #SBATCH --partition=standard
 #SBATCH --mem=32G
 #SBATCH --time=1-00:00:00
-#SBATCH --output=slurm_logs/output_logs/neurobolt_%j.out
-#SBATCH --error=slurm_logs/error_logs/neurobolt_%j.err 
+#SBATCH --output=logs/output_logs/neurobolt_%A_%a.out
+#SBATCH --error=logs/error_logs/neurobolt_%A_%a.err
 
 source ~/.bashrc
 conda activate neurobolt

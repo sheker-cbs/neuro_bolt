@@ -16,7 +16,9 @@ Script purpose
 --------------
 This script trains one NeuroBOLT model per subject on the Algermissen EEG/fMRI
 dataset (intra-subject / "intrascan"). Configuration is set on an
-`argparse.Namespace` in-place (no CLI parsing).
+`argparse.Namespace` in-place (no CLI parsing). Subject selection for SLURM
+arrays uses env vars `NEUROBOLT_SUBJECT` or `SLURM_ARRAY_TASK_ID` (see
+`select_subjects`). Each job writes a unique folder under `checkpoints/runs/`.
 """
 
 import argparse
@@ -43,8 +45,36 @@ from engine import train_one_epoch, evaluate
 from runtime import NativeScalerWithGradNormCount as NativeScaler
 import runtime as utils
 from dataset_maker import get_datasets
-# import arch.model  
-import models.model
+
+# ---------------------------------------------------------------------------
+# Training mode: baseline (arch) vs attention (models + new_layers)
+# ---------------------------------------------------------------------------
+# Override with env (must match run_neuro.sh):
+#   NEUROBOLT_TRAINING_MODE=baseline|attention
+# Default below is used when the env var is unset.
+_DEFAULT_TRAINING_MODE = 'baseline'  # 'baseline' | 'attention'
+_mode_env = os.environ.get('NEUROBOLT_TRAINING_MODE', '').strip().lower()
+if not _mode_env:
+    TRAINING_MODE = _DEFAULT_TRAINING_MODE
+elif _mode_env in ('attention', 'attn'):
+    TRAINING_MODE = 'attention'
+elif _mode_env in ('baseline', 'base'):
+    TRAINING_MODE = 'baseline'
+else:
+    raise ValueError(
+        f"NEUROBOLT_TRAINING_MODE={_mode_env!r}; use 'baseline' or 'attention'")
+
+# Separate artifact roots under checkpoint_path:
+#   log_baseline/  — sum/mean MSS (import arch.model)
+#   log_attn/      — Band/Channel attention MSS (import models.model)
+LOG_FOLDER = 'log_attn' if TRAINING_MODE == 'attention' else 'log_baseline'
+
+if TRAINING_MODE == 'attention':
+    import models.model  # registers neurobolt_default (attention MSS)
+else:
+    import arch.model  # registers neurobolt_default (baseline MSS)
+
+print(f"Training mode: {TRAINING_MODE}  (artifacts under …/{LOG_FOLDER}/)")
 
 # ---------------------------------------------------------------------------
 # Filesystem locations
@@ -52,24 +82,30 @@ import models.model
 labram_ckpt_path = "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/checkpoints/labram-base.pth"
 checkpoint_path = "/data/p_03183/personal_workspaces/sheker/NeuroBOLT/checkpoints"
 
-ALGERMISSEN_DATA_ROOT = "/data/p_03183/data/pav_algermissen/derived/py_imported/per_block/for_NeuroBOLT/"
+ALGERMISSEN_DATA_ROOT = "/data/p_03183/data/pav_algermissen/derived/py_imported/per_block/for_neurobolt/"
 ALGERMISSEN_SKIP = {"sub-004", "sub-015", "sub-025"}
+
+# Mode-specific root: {checkpoint_path}/log_baseline or …/log_attn
+mode_checkpoint_root = str(Path(checkpoint_path) / LOG_FOLDER)
 
 # ---------------------------------------------------------------------------
 # Experiment configuration
 # ---------------------------------------------------------------------------
 args = argparse.Namespace()
 
+args.training_mode = TRAINING_MODE
+args.log_folder = LOG_FOLDER
 args.finetune = labram_ckpt_path
 args.dataset_root = ALGERMISSEN_DATA_ROOT
-# args.output_dir = str(Path(checkpoint_path))
-# args.log_dir = str(Path(checkpoint_path) / 'log/neurobolt_algermissen')
-args.output_dir = str(Path(checkpoint_path) / 'attn')
-args.log_dir = str(Path(checkpoint_path) / 'log/neurobolt_algermissen_attn')
+# Overwritten per subject/job by prepare_run_dirs() to
+#   {checkpoint_path}/{log_baseline|log_attn}/runs/{timestamp}_j{JOB}[_a{ARRAY}]_{mode}_{subject}/
+#   and .../tb/ for TensorBoard.
+args.output_dir = mode_checkpoint_root
+args.log_dir = str(Path(mode_checkpoint_root) / 'tb')
 args.dataname = 'sub-001'
 
 args.lr = 1e-4
-args.batch_size = 2
+args.batch_size = 8
 args.epochs = 20
 args.drop = 0.3
 args.weight_decay = 0.01
@@ -78,7 +114,7 @@ args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"                       using device: {args.device}")
 
 args.model = 'neurobolt_default'
-args.update_freq = 4
+args.update_freq = 2
 args.qkv_bias = False
 args.rel_pos_bias = False
 args.abs_pos_emb = True
@@ -125,6 +161,109 @@ args.window_sec = 16
 args.model_hz = 200
 args.ch_names = []  # filled from Algermissen npz in get_dataset / main
 
+# -----------------------------------------------------------------------------
+# CROSS-SUBJECT / VU PATH config (unused while dataset=='algermissen')
+# Enable by setting e.g. dataset='VU', train_test_mode='full_test', and the
+# paths below. See get_dataset() and __main__ banners.
+# -----------------------------------------------------------------------------
+args.mri_sync_event = 'R149'
+args.prepro_datapath = None  # optional pickle for prepare_full_dataloader
+args.save_input_tensor = False
+args.split_index_sheet = str(
+    Path(os.path.dirname(os.path.abspath(__file__))) / 'scan_split_example.xlsx'
+)
+# Standard 26-ch VU montage (paper). Used when dataset == 'VU'.
+VU_CH_NAMES = [
+    'FP1', 'FP2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2', 'F7', 'F8',
+    'T7', 'T8', 'P7', 'P8', 'FPZ', 'FZ', 'CZ', 'PZ', 'POZ', 'OZ', 'FT9', 'FT10',
+    'TP9', 'TP10',
+]
+
+
+def list_algermissen_subjects(dataset_root, skip=None):
+    """Sorted unique subject IDs from `{subject}_block*.npz`, minus skip set."""
+    if skip is None:
+        skip = ALGERMISSEN_SKIP
+    root = Path(dataset_root)
+    if not root.is_dir():
+        raise FileNotFoundError(
+            f"Algermissen npz directory not found: {dataset_root}")
+    subjects = sorted({
+        p.name.split('_block')[0] for p in root.glob('*_block*.npz')
+    })
+    return [s for s in subjects if s not in skip]
+
+
+def select_subjects(subjects):
+    """One subject if NEUROBOLT_SUBJECT or SLURM_ARRAY_TASK_ID is set; else all.
+
+    Mapping: SLURM_ARRAY_TASK_ID is a 0-based index into `subjects` (already
+    skip-filtered). NEUROBOLT_SUBJECT (e.g. sub-001) wins when both are set.
+    """
+    env_sub = os.environ.get('NEUROBOLT_SUBJECT', '').strip()
+    if env_sub:
+        if env_sub not in subjects:
+            raise ValueError(
+                f"NEUROBOLT_SUBJECT={env_sub!r} not in subject list: {subjects}")
+        return [env_sub]
+    array_id = os.environ.get('SLURM_ARRAY_TASK_ID', '').strip()
+    if array_id != '':
+        i = int(array_id)
+        if i < 0 or i >= len(subjects):
+            raise IndexError(
+                f"SLURM_ARRAY_TASK_ID={i} out of range for {len(subjects)} "
+                f"subjects: {subjects}")
+        return [subjects[i]]
+    return subjects
+
+
+def prepare_run_dirs(args, subject, checkpoint_root):
+    """Per-job run folder: log.txt, run_meta.json, tb/, checkpoints, plots.
+
+    Layout (mode = baseline → log_baseline, attention → log_attn):
+      {checkpoint_path}/{log_baseline|log_attn}/runs/
+          {YYYYMMDD-HHMMSS}_j{JOB}_a{ARRAY}_{mode}_{subject}/
+        log.txt, run_meta.json, predictions_vs_true_epoch*.png, tb/,
+        {dataname}-VS_smooth_16s-.../   (from runtime.save_model)
+    Off SLURM, JOB is `local` and `_a{ARRAY}` is omitted.
+    `checkpoint_root` should already be the mode folder (…/log_baseline or …/log_attn).
+    """
+    ts = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+    job_id = os.environ.get('SLURM_JOB_ID', 'local')
+    array_id = os.environ.get('SLURM_ARRAY_TASK_ID', '').strip()
+    mode = getattr(args, 'training_mode', 'baseline')
+    mode_tag = 'attn' if mode == 'attention' else 'baseline'
+    if array_id:
+        run_name = f'{ts}_j{job_id}_a{array_id}_{mode_tag}_{subject}'
+    else:
+        run_name = f'{ts}_j{job_id}_{mode_tag}_{subject}'
+    run_dir = Path(checkpoint_root) / 'runs' / run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / 'tb').mkdir(exist_ok=True)
+    args.output_dir = str(run_dir)
+    args.log_dir = str(run_dir / 'tb')
+    meta = {
+        'subject': subject,
+        'training_mode': mode,
+        'log_folder': getattr(args, 'log_folder', None),
+        'slurm_job_id': os.environ.get('SLURM_JOB_ID'),
+        'slurm_array_job_id': os.environ.get('SLURM_ARRAY_JOB_ID'),
+        'slurm_array_task_id': os.environ.get('SLURM_ARRAY_TASK_ID'),
+        'model': args.model,
+        'lr': args.lr,
+        'batch_size': args.batch_size,
+        'epochs': args.epochs,
+        'timestamp': ts,
+        'run_name': run_name,
+    }
+    with open(run_dir / 'run_meta.json', 'w', encoding='utf-8') as f:
+        json.dump(meta, f, indent=2)
+        f.write('\n')
+    with open(run_dir / 'log.txt', 'w', encoding='utf-8') as f:
+        pass
+    print(f'Run directory: {run_dir}')
+    return run_dir
+
 
 def get_models(args):
     """Instantiate neurobolt_default via timm's create_model registry."""
@@ -149,17 +288,75 @@ def get_models(args):
 
 
 def get_dataset(args):
-    """Load Algermissen train/test/val TensorDatasets for one subject."""
+    """Load train/test/val TensorDatasets (Algermissen default, or VU/cross-subject)."""
     metrics = ["mse", "corr"]
-    train_dataset, test_dataset, val_dataset, ch_names = \
-        get_datasets.prepare_algermissen_onesub_dataloader(
-            args.dataset_root,
-            args.dataname,
-            model_hz=args.model_hz,
-            window_sec=args.window_sec,
-            tr=args.TR,
-        )
-    return train_dataset, test_dataset, val_dataset, ch_names, metrics
+    spec_chan_ind = None
+
+    # ----- LIVE DEFAULT: Algermissen intrascan -----
+    if args.dataset == 'algermissen':
+        train_dataset, test_dataset, val_dataset, ch_names = \
+            get_datasets.prepare_algermissen_onesub_dataloader(
+                args.dataset_root,
+                args.dataname,
+                model_hz=args.model_hz,
+                window_sec=args.window_sec,
+                tr=args.TR,
+            )
+        return train_dataset, test_dataset, val_dataset, ch_names, metrics, spec_chan_ind
+
+    # =============================================================================
+    # CROSS-SUBJECT / VU PATH (isolated; runs when args.dataset != 'algermissen')
+    # -----------------------------------------------------------------------------
+    # - train_test_mode == 'intrascan'     -> one VU scan (prepare_onesub_dataloader)
+    # - train_test_mode == 'full_test'     -> cross-subject via split_index_sheet
+    #                                        or prepro_datapath pickle
+    # - train_test_mode == 'full_retainvu' -> same full loader; subset ch_names
+    # - else (generic pre-epoched npz)     -> prepare_onesub_npz_dataloader
+    # =============================================================================
+    if args.train_test_mode == 'full_test':
+        train_dataset, test_dataset, val_dataset = \
+            get_datasets.prepare_full_dataloader(args)
+        if args.dataset == 'VU':
+            ch_names = list(VU_CH_NAMES)
+        else:
+            ch_names = list(args.ch_names)
+            if not ch_names:
+                raise ValueError(
+                    "Non-VU full_test requires args.ch_names to be set.")
+    elif args.train_test_mode == 'full_retainvu':
+        train_dataset, test_dataset, val_dataset = \
+            get_datasets.prepare_full_dataloader(args)
+        ch_names_full_vu = list(VU_CH_NAMES)
+        ch_names = [
+            'FP1', 'FP2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2',
+            'F7', 'F8', 'T7', 'T8', 'P7', 'P8', 'FZ', 'CZ', 'PZ', 'OZ',
+            'TP9', 'TP10', 'POZ',
+        ]
+        spec_chan_ind = [ch_names_full_vu.index(ch) for ch in ch_names]
+    elif args.dataset == 'VU' or args.train_test_mode == 'intrascan':
+        # VU (or other) single-scan intrascan via EEGLAB+DiFuMo paper loader.
+        if args.dataset == 'VU':
+            train_dataset, test_dataset, val_dataset = \
+                get_datasets.prepare_onesub_dataloader(args)
+            ch_names = list(VU_CH_NAMES)
+        else:
+            # Pre-epoched single-file npz helper (legacy live-file API).
+            ch_names = list(args.ch_names)
+            train_dataset, test_dataset, val_dataset = \
+                get_datasets.prepare_onesub_npz_dataloader(
+                    args.dataset_root, args.dataname, ch_names, tr=args.TR)
+            if not ch_names:
+                raise ValueError(
+                    "Non-VU npz intrascan requires args.ch_names to be set.")
+    else:
+        raise ValueError(
+            f"Unsupported combo dataset={args.dataset!r} "
+            f"train_test_mode={args.train_test_mode!r}")
+    # =============================================================================
+    # END CROSS-SUBJECT / VU PATH
+    # =============================================================================
+
+    return train_dataset, test_dataset, val_dataset, ch_names, metrics, spec_chan_ind
 
 
 def main(args):
@@ -187,7 +384,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train, dataset_test, dataset_val, ch_names, metrics = get_dataset(args)
+    dataset_train, dataset_test, dataset_val, ch_names, metrics, spec_chan_ind = get_dataset(args)
     ch_names = [c.upper() for c in ch_names]
     args.ch_names = ch_names
 
@@ -229,24 +426,33 @@ def main(args):
         drop_last=True,
     )
 
-    bs_val = args.batch_size
-    bs_test = args.batch_size
+    # CROSS-SUBJECT / VU: paper used smaller val/test batches for multi-scan full_test.
+    if args.dataset == "VU" and args.train_test_mode == 'full_test':
+        bs_val = int(len(dataset_val) / 5)
+        bs_test = int(len(dataset_test) / 6)
+    else:
+        bs_val = len(dataset_val)
+        bs_test = len(dataset_test)
     data_loader_val = torch.utils.data.DataLoader(
         dataset_val, sampler=sampler_val,
-        batch_size=bs_val,
+        batch_size=max(bs_val, 1),
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False
     )
     data_loader_test = torch.utils.data.DataLoader(
         dataset_test, sampler=sampler_test,
-        batch_size=bs_test,
+        batch_size=max(bs_test, 1),
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False
     )
 
     model = get_models(args)
+    # Restore head_act (previously commented out here). VS prediction is MSE
+    # regression, so Identity — not sigmoid/softmax. Live NeuroBOLTransformer
+    # did not define the attr, which raised AttributeError in forward.
+    model.head_act = torch.nn.Identity()
 
     patch_size = model.patch_size
     print("Patch size = %s" % str(patch_size))
@@ -363,7 +569,7 @@ def main(args):
             log_writer=log_writer, start_steps=epoch * num_training_steps_per_epoch,
             lr_schedule_values=lr_schedule_values, wd_schedule_values=wd_schedule_values,
             num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq,
-            ch_names=ch_names, is_binary=args.nb_roi == 1, spec_chan=None
+            ch_names=ch_names, is_binary=args.nb_roi == 1, spec_chan=spec_chan_ind
         )
 
         val_stats = evaluate(data_loader_val, model, device, header='Val:', ch_names=ch_names, metrics=metrics,
@@ -477,50 +683,62 @@ def main(args):
 
 
 if __name__ == '__main__':
-    # if args.output_dir:
-    #     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-
-    # all_files = os.listdir(args.dataset_root)
-    # subjects = sorted({
-    #     f.split('_block')[0] for f in all_files
-    #     if f.endswith('.npz') and '_block' in f
-    # })
-    # subjects = [s for s in subjects if s not in ALGERMISSEN_SKIP]
-    # print(f"Algermissen subjects to train: {subjects}")
-
-
-    checkpoint_root = checkpoint_path
+    # Mode-separated root: …/checkpoints/log_baseline or …/log_attn
+    checkpoint_root = mode_checkpoint_root
     Path(checkpoint_root).mkdir(parents=True, exist_ok=True)
+    print(f"Artifact root ({TRAINING_MODE}): {checkpoint_root}")
+
     # ----- LIVE DEFAULT: Algermissen per-subject intrascan -----
     # SLURM array / NEUROBOLT_SUBJECT → one subject; otherwise loop all.
     if args.dataset == 'algermissen' and args.train_test_mode == 'intrascan':
-        all_subjects = list_algermissen_subjects(args.dataset_root)
+        all_subjects = list_algermissen_subjects(
+            args.dataset_root, skip=ALGERMISSEN_SKIP)
         subjects = select_subjects(all_subjects)
         print(f"Algermissen subject list ({len(all_subjects)}): {all_subjects}")
         print(f"This job will train: {subjects}")
         for i, s in enumerate(all_subjects):
             print(f"  array task {i} -> {s}")
 
-    # for subject in subjects:
-    #     print(f"\n{'='*60}\nStarting NeuroBOLT training for {subject}\n{'='*60}\n")
-    #     args.dataname = subject
-    #     main(args)
-    #     print(f"Completed training for {subject}")
-    # print("\nAll subjects completed!")
-
-    for subject in subjects:
+        for subject in subjects:
             # Skip-completed (not live). Copy into this loop if re-running a
             # full all-subjects job on `short` after a timeout:
-            # hits = list(Path(checkpoint_root).glob(
-            #     f"runs/*_{subject}/{subject}-VS_smooth_16s-*/checkpoint-epoch*.pth"))
-            # hits += list(Path(checkpoint_root).glob(
-            #     f"{subject}-VS_smooth_16s-*/checkpoint-epoch*.pth"))  # pre-runs/ layout
-            # if hits:
-            #     print(f"Skipping {subject}: found {hits[0]}")
-            #     continue
-        print(f"\n{'='*60}\nStarting NeuroBOLT training for {subject}\n{'='*60}\n")
-        args.dataname = subject
-        prepare_run_dirs(args, subject, checkpoint_root)
+            hits = list(Path(checkpoint_root).glob(
+                f"runs/*_{subject}/{subject}-VS_smooth_16s-*/checkpoint-epoch*.pth"))
+            hits += list(Path(checkpoint_path).glob(
+                f"runs/*_{subject}/{subject}-VS_smooth_16s-*/checkpoint-epoch*.pth"))  # old flat runs/
+            if hits:
+                print(f"Skipping {subject}: found {hits[0]}")
+                continue
+            print(
+                f"\n{'='*60}\n"
+                f"Starting NeuroBOLT ({TRAINING_MODE}) training for {subject}\n"
+                f"{'='*60}\n")
+            args.dataname = subject
+            prepare_run_dirs(args, subject, checkpoint_root)
+            main(args)
+            print(f"Completed training for {subject}")
+        print("\nAll subjects completed!")
+
+    # =============================================================================
+    # CROSS-SUBJECT / VU PATH entry (isolated; runs when not Algermissen intrascan)
+    # -----------------------------------------------------------------------------
+    # Enable by changing Namespace above, e.g.:
+    #   args.dataset = 'VU'
+    #   args.dataset_root = './data/'          # EEG/ + fMRI_difumo/
+    #   args.labels_roi = 'Thalamus'
+    #   args.TR = 2.1
+    #   args.train_test_mode = 'full_test'     # or 'intrascan' with dataname
+    #   args.split_index_sheet = './scan_split_example.xlsx'
+    #   args.dataname = 'sub11-scan01'         # only needed for intrascan
+    # Then: one call to main(args) (no Algermissen subject loop).
+    # =============================================================================
+    else:
+        print(
+            f"Running non-Algermissen path: dataset={args.dataset}, "
+            f"train_test_mode={args.train_test_mode}"
+        )
+        prepare_run_dirs(args, args.dataname, checkpoint_root)
         main(args)
-        print(f"Completed training for {subject}")
-    print("\nAll subjects completed!")
+    # =============================================================================
+    # END CROSS-SUBJECT / VU PATH entry
+    # =============================================================================

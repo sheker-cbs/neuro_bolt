@@ -4,15 +4,6 @@
 
 
 
-<!-- PROJECT SHIELDS -->
-<!-- [![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![project_license][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url] -->
-
-
 
 <!-- PROJECT LOGO -->
 <br />
@@ -21,7 +12,7 @@
     <img src="images/logo.png" alt="Logo" width="80" height="80">
   </a>
 
-<h3 align="center">project_title</h3>
+<h3 align="center">NeuroBOLT fork guide</h3>
 
   <p align="center">
     project_description
@@ -68,11 +59,39 @@
 
 
 <!-- ABOUT THE PROJECT -->
-## About The Project
+## Project files layout
 
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
+```text
+neuro_bolt-main/
+├── main.py                 # Namespace config + subject select + run folders
+├── run_neuro.sh            # SLURM script
+├── engine.py               # train / evaluate steps
+<!-- ├── runtime.py              # distributed helpers, checkpoint save/load, TB logger glue -->
+├── utils.py                # shared utilities (includes alternate save helpers)
+├── optim_factory.py
+├── requirements.txt        #modules to import
+├── scan_split_example.xlsx # VU / cross-subject splits (optional path)
+├── arch/                   # baseline model + MSS (sum/mean)
+│   ├── model.py
+│   └── model_multiscale.py
+<!-- ├── models/                  -->
+│   ├── model.py  
+│   ├── model_multiscale.py
+│   ├── new_layers.py       # BandAttention, ChannelAttention attention pooling 
+│   └── check.py
+├── dataset_maker/
+│   ├── get_datasets.py     # custom dataset loaders (Algermissen for this project)
+│   └── preproc.py          # VU path helper
+├── checkpoints/            # place labram-base.pth (or point finetune elsewhere)
+├── logs/                   # SLURM logs with .out / .err
+├── README.md               # this file (fork guide)
+└── README_neurobolt.md     # original NeuroBOLT docs
+```
+---
+## About this project
 
-Here's a blank template to get started. To avoid retyping too much info, do a search and replace with your text editor for the following: `github_username`, `repo_name`, `twitter_handle`, `linkedin_username`, `email_client`, `email`, `project_title`, `project_description`, `project_license`
+This project contains implementation of NeuroBOLT pipeline adapted to Algermissen dataset. NeuroBOLT is a 
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -83,39 +102,88 @@ Here's a blank template to get started. To avoid retyping too much info, do a se
 
 
 <!-- GETTING STARTED -->
-## Getting Started
+## Installation
+To run this fork or the official NeuroBOLT pipeline, run the following commands: 
+```sh
 
-This is an example of how you may give instructions on setting up your project locally.
-To get a local copy up and running follow these simple example steps.
+conda create -n neurobolt python=3.9
+conda activate neurobolt
+conda install pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+conda install tensorboardX
+pip install -r requirements.txt
 
-### Prerequisites
+```
 
-This is an example of how to list things you need to use the software and how to install them.
-* npm
-  ```sh
-  npm install npm@latest -g
-  ```
+### Code setup
 
-### Installation
+1. To use the pipeline, you will need to submit a SLURM job by running `run_neuro.sh`.
 
-1. Get a free API Key at [https://example.com](https://example.com)
-2. Clone the repo
-   ```sh
-   git clone https://github.com/github_username/repo_name.git
-   ```
-3. Install NPM packages
-   ```sh
-   npm install
-   ```
-4. Enter your API in `config.js`
-   ```js
-   const API_KEY = 'ENTER YOUR API';
-   ```
-5. Change git remote url to avoid accidental pushes to base project
-   ```sh
-   git remote set-url origin github_username/repo_name
-   git remote -v # confirm the changes
-   ```
+2.  `main.py` is the main entry point, responsible for 'orchestrating' the pipeline. When invoked by `run_neuro.sh`, the script loads the data, builds the model,finetunes with LaBraM hyperparameters, trains epochs, evaluates and saves logs/checkpoints/plots. It doesn't contain any training logic by itself. Contains configuration object `args` with hardcoded parameters that can be customized. Note: configuration is edited in this file and not in the command line. 
+
+
+| Parameter | Role |
+|-----------|------|
+| `labram_ckpt_path` / `args.finetune` | LaBraM pretrained weights path |
+| `checkpoint_path` | Base for checkpoints / run folders |
+| `ALGERMISSEN_DATA_ROOT` / `args.dataset_root` | Per-block Algermissen `.npz` directory |
+| `ALGERMISSEN_SKIP` | Subjects excluded from the intrascan loop (default: `sub-004`, `sub-015`, `sub-025`) |
+| `args.output_dir` | Run artifacts root (overwritten by `prepare_run_dirs` to `checkpoints/runs/...`) |
+| `args.log_dir` | TensorBoard dir (overwritten to `{run_dir}/tb/`) |
+| `args.dataname` | Current subject id (set per loop iteration) |
+| `args.labels_roi` | Default `'VS'` (checkpoint naming) |
+| `args.dataset` | Default `'algermissen'` |
+| `args.train_test_mode` | Default `'intrascan'` |
+| `args.TR`, `args.window_sec`, `args.model_hz` | Timing / windowing (1.4 s, 16 s, 200 Hz) |
+| `args.lr`, `args.batch_size`, `args.epochs`, `args.drop`, `args.weight_decay` | Core training hypers |
+| `args.update_freq` | Gradient accumulation steps |
+| `args.layer_decay`, `args.warmup_*`, `args.min_lr` | LR schedule / layer-wise decay |
+| `args.model`, `args.nb_roi`, drop/attn/pos flags | Architecture knobs passed into `create_model` |
+| `args.resume`, `args.auto_resume`, `args.save_ckpt` | Checkpoint resume / save |
+| `NEUROBOLT_SUBJECT` | Env: force one subject id |
+| `SLURM_ARRAY_TASK_ID` | Env: 0-based index into skip-filtered subject list |
+| `list_algermissen_subjects` | Discover subjects from `*_block*.npz` |
+| `select_subjects` | Apply env / array selection |
+| `prepare_run_dirs` | Create `runs/{timestamp}_j{JOB}[_a{ARRAY}]_{subject}/` + `run_meta.json` |
+| `get_models` / `get_dataset` / `main` | Build model, load data, run one subject job |
+| VU-only knobs | `split_index_sheet`, `mri_sync_event`, `prepro_datapath`, `VU_CH_NAMES` (idle on Algermissen) |
+---
+
+
+### Training mechanics
+
+1. `engine.py` turns an EEG batch into a loss. 
+
+| Parameter | Role |
+|-----------|------|
+| `model`, `criterion` | Network + MSE loss |
+| `data_loader` | Yields `(EEG, target)` batches |
+| `optimizer`, `loss_scaler` | Step weights; AMP GradScaler wrapper from `runtime` |
+| `ch_names` → `input_chans` | Via `utils.get_input_chans` before forward |
+| `spec_chan` | Optional spectral channel subset (`None` on live Algermissen) |
+| `update_freq` | Accumulate this many micro-batches before optimizer step |
+| `lr_schedule_values`, `wd_schedule_values` | Per-iteration LR / weight-decay |
+| `max_norm` / `args.clip_grad` | Optional grad clip inside scaler |
+| `is_binary` | If true, unsqueeze target to `[B,1]` (single ROI) |
+| `/100`, `T=200` | EEG scale and patch length (hard-coded in loop) |
+
+---
+
+2. `optim.py` constructs an optimizer and optional ViT layer-decay parameter groups for fine-tuning.
+
+| Parameter | Role |
+|-----------|------|
+| `create_optimizer(args, model, …)` | Construct AdamW (default) / other opts from `args.opt` |
+| `args.lr`, `args.weight_decay`, `args.opt_eps`, `args.opt_betas` | Optimizer hyperparameters |
+| `args.opt` | Optimizer name (`'adamw'`) |
+| `LayerDecayValueAssigner` | Maps layer id → LR scale from `args.layer_decay` |
+| `get_parameter_groups` | Split decay / no_decay (+ per-layer LR scale) |
+| `get_num_layer_for_vit` | Assign transformer block depth for decay |
+| `skip_list` | Params without weight decay (e.g. bias, `pos_embed`) |
+
+---
+
+3. `utils.py` and `runtime.py` share the same code infrastructure. 
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -180,35 +248,3 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 
 
 
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/github_username/repo_name.svg?style=for-the-badge
-[contributors-url]: https://github.com/github_username/repo_name/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/github_username/repo_name.svg?style=for-the-badge
-[forks-url]: https://github.com/github_username/repo_name/network/members
-[stars-shield]: https://img.shields.io/github/stars/github_username/repo_name.svg?style=for-the-badge
-[stars-url]: https://github.com/github_username/repo_name/stargazers
-[issues-shield]: https://img.shields.io/github/issues/github_username/repo_name.svg?style=for-the-badge
-[issues-url]: https://github.com/github_username/repo_name/issues
-[license-shield]: https://img.shields.io/github/license/github_username/repo_name.svg?style=for-the-badge
-[license-url]: https://github.com/github_username/repo_name/blob/master/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/linkedin_username
-[product-screenshot]: images/screenshot.png
-<!-- Shields.io badges. You can a comprehensive list with many more badges at: https://github.com/inttter/md-badges -->
-[Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
-[Next-url]: https://nextjs.org/
-[React.js]: https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB
-[React-url]: https://reactjs.org/
-[Vue.js]: https://img.shields.io/badge/Vue.js-35495E?style=for-the-badge&logo=vuedotjs&logoColor=4FC08D
-[Vue-url]: https://vuejs.org/
-[Angular.io]: https://img.shields.io/badge/Angular-DD0031?style=for-the-badge&logo=angular&logoColor=white
-[Angular-url]: https://angular.io/
-[Svelte.dev]: https://img.shields.io/badge/Svelte-4A4A55?style=for-the-badge&logo=svelte&logoColor=FF3E00
-[Svelte-url]: https://svelte.dev/
-[Laravel.com]: https://img.shields.io/badge/Laravel-FF2D20?style=for-the-badge&logo=laravel&logoColor=white
-[Laravel-url]: https://laravel.com
-[Bootstrap.com]: https://img.shields.io/badge/Bootstrap-563D7C?style=for-the-badge&logo=bootstrap&logoColor=white
-[Bootstrap-url]: https://getbootstrap.com
-[JQuery.com]: https://img.shields.io/badge/jQuery-0769AD?style=for-the-badge&logo=jquery&logoColor=white
-[JQuery-url]: https://jquery.com 
